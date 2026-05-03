@@ -1,0 +1,12 @@
+{
+  "hotkey": "`",
+  "simple_action_type": "mouse",
+  "simple_action_value": "left",
+  "simple_interval": 100,
+  "simple_interval_rnd": 150,
+  "simple_x": 1020,
+  "simple_y": 820,
+  "simple_pos_rnd": 0,
+  "target_window_title": "World of Warcraft",
+  "use_direct_click": false
+}
