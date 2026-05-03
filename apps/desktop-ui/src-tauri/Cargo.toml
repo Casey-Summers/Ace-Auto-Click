@@ -1,0 +1,17 @@
+[package]
+name = "ace-auto-click"
+version = "0.1.0"
+description = "Ace Auto Click desktop shell"
+authors = ["Ace Auto Click"]
+edition = "2021"
+
+[lib]
+name = "ace_auto_click_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.2.2", features = [] }
+tauri-plugin-shell = "2.2.0"

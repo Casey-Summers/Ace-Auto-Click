@@ -1,0 +1,10 @@
+{
+  "name": "ace-auto-click-workspace",
+  "private": true,
+  "scripts": {
+    "desktop:dev": "npm --prefix apps/desktop-ui run dev",
+    "desktop:tauri": "npm --prefix apps/desktop-ui run tauri dev",
+    "desktop:build": "npm --prefix apps/desktop-ui run build",
+    "desktop:test": "npm --prefix apps/desktop-ui run test"
+  }
+}
