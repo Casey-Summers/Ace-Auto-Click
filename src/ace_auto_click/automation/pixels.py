@@ -6,7 +6,6 @@ from typing import Tuple
 import sys
 if sys.platform == "win32":
     import ctypes
-    from ctypes import wintypes
     user32 = ctypes.windll.user32
     gdi32 = ctypes.windll.gdi32
 else:

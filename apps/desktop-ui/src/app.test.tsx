@@ -25,5 +25,12 @@ describe("App", () => {
     expect(screen.getByText("Action Library")).toBeInTheDocument();
     expect(screen.getByText("Sequence Builder")).toBeInTheDocument();
     expect(screen.getByText("Emergency stop")).toBeInTheDocument();
+    expect(screen.getByText("Click left at 500, 500")).toBeInTheDocument();
+  });
+
+  it("shows a disconnected state when the backend is unavailable", async () => {
+    render(<App />);
+
+    expect(await screen.findByText(/API unavailable: offline/)).toBeInTheDocument();
   });
 });

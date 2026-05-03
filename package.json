@@ -2,9 +2,11 @@
   "name": "ace-auto-click-workspace",
   "private": true,
   "scripts": {
-    "desktop:dev": "npm --prefix apps/desktop-ui run dev",
+    "desktop:dev": "python app.py desktop",
     "desktop:tauri": "npm --prefix apps/desktop-ui run tauri dev",
     "desktop:build": "npm --prefix apps/desktop-ui run build",
-    "desktop:test": "npm --prefix apps/desktop-ui run test"
+    "desktop:test": "npm --prefix apps/desktop-ui run test",
+    "python:check": "python app.py check",
+    "python:test": "python -m pytest"
   }
 }

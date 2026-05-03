@@ -1,0 +1,9 @@
+[project]
+name = "ace-auto-click"
+version = "0.1.0"
+description = "Desktop automation workspace for precise mouse, keyboard, pixel, and sequence workflows."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any
 
 import pyautogui
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from ace_auto_click_models import (
+from ace_auto_click.api.models import (
     ActionStepModel,
     AppSettings,
     ClickStepModel,
@@ -21,11 +20,16 @@ from ace_auto_click_models import (
     SimpleRunRequest,
     WaitStepModel,
 )
-from actions import ClickStep, KeyTapStep, PixelCheckStep, WaitStep
-from click_engine import ClickEngine, ClickSettings
-from pixel_match import PixelCondition, get_pixel_rgb
-from recorder import ActionRecorder
-from storage import load_settings, save_settings
+from ace_auto_click.automation.actions import (
+    ClickStep,
+    KeyTapStep,
+    PixelCheckStep,
+    WaitStep,
+)
+from ace_auto_click.automation.engine import ClickEngine, ClickSettings
+from ace_auto_click.automation.pixels import PixelCondition, get_pixel_rgb
+from ace_auto_click.automation.recorder import ActionRecorder
+from ace_auto_click.storage.settings import load_settings, save_settings
 
 
 app = FastAPI(title=ProductName, version="0.1.0")
@@ -184,3 +188,7 @@ def record_stop() -> dict[str, Any]:
 @app.get("/debug/settings-raw")
 def debug_settings_raw() -> dict[str, Any]:
     return _load_app_settings().model_dump()
+
+
+def create_app() -> FastAPI:
+    return app

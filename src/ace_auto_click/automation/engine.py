@@ -3,8 +3,8 @@ from __future__ import annotations
 import random
 import threading
 import time
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple, Any
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
 
 import pyautogui
 from pynput import keyboard, mouse
@@ -12,8 +12,8 @@ from pynput import keyboard, mouse
 pyautogui.PAUSE = 0
 pyautogui.FAILSAFE = True
 
-from pixel_match import PixelCondition, should_run_clicking
-from actions import ActionStep
+from ace_auto_click.automation.actions import ActionStep
+from ace_auto_click.automation.pixels import PixelCondition, should_run_clicking
 
 StatusCb = Callable[[str], None]
 

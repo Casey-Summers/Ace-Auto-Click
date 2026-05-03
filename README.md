@@ -1,15 +1,19 @@
 # Ace Auto Click
 
-Ace Auto Click is a dark-first desktop automation workspace for precise mouse,
-keyboard, pixel, and sequence workflows. The app is being migrated from the
-legacy `customtkinter` UI to a Tauri + React + TypeScript frontend backed by the
-existing Python automation engine.
+Ace Auto Click is a dark-first desktop popup application for precise mouse,
+keyboard, pixel, and sequence workflows. Tauri owns the application window,
+React renders the interface, and Python owns all OS-level automation behind a
+local API.
 
 ## Architecture
 
-- `ace_auto_click_api.py` exposes the local typed API boundary.
-- `click_engine.py`, `actions.py`, `pixel_match.py`, and `recorder.py` remain
-  the automation backend.
+- `app.py` is the root launcher for the desktop app, API debug server, and
+  runtime checks.
+- `src/ace_auto_click/api` exposes the local typed API boundary.
+- `src/ace_auto_click/automation` owns mouse, keyboard, pixel, and recorder
+  behavior.
+- `src/ace_auto_click/runtime` owns process orchestration.
+- `src/ace_auto_click/storage` owns settings and macro persistence.
 - `apps/desktop-ui` contains the Tauri/React frontend.
 - `DESIGN.md` is the UI pillar and theme source of truth.
 
@@ -27,27 +31,34 @@ python -m pip install -r requirements.txt
 npm.cmd --prefix apps/desktop-ui install
 ```
 
-Rust/Cargo are required to run or build the Tauri desktop shell.
+Rust/Cargo are required to build the Tauri desktop shell. During development,
+`python app.py desktop` falls back to a native Python WebView popup if Cargo is
+not available.
 
 ## Run
 
-Start the Python API:
+Run the desktop app in development mode. This opens the Tauri popup application
+when Cargo is available, or a native WebView popup fallback when it is not. It
+does not use the browser as the app surface:
 
 ```powershell
-python main.py api
+python app.py desktop
 ```
 
-Start the React frontend during development:
+Run the Python API by itself for backend/debug work:
 
 ```powershell
-npm.cmd --prefix apps/desktop-ui run dev
+python app.py api
 ```
 
-Run the Tauri shell after installing Rust/Cargo:
+Verify imports, settings migration, and API app creation:
 
 ```powershell
-python main.py desktop
+python app.py check
 ```
+
+Vite remains an internal development server for Tauri. Do not use the browser
+tab as the user-facing app surface.
 
 ## Safety
 
@@ -55,3 +66,11 @@ python main.py desktop
 - PyAutoGUI's screen-corner failsafe remains enabled.
 - This tool is intended for personal productivity, accessibility, and testing
   your own apps.
+
+## Tests
+
+```powershell
+python -m pytest
+npm.cmd --prefix apps/desktop-ui run test
+npm.cmd --prefix apps/desktop-ui run build
+```
