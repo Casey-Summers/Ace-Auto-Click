@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from ace_auto_click.api.models import (
     ActionStepModel,
     AppSettings,
+    AutomationProfile,
     ClickStepModel,
     CommandResult,
     KeyTapStepModel,
@@ -67,11 +68,13 @@ def _state() -> RuntimeState:
 def _load_app_settings() -> AppSettings:
     raw = load_settings()
     if "simple" in raw:
-        return AppSettings.model_validate(raw)
+        settings = AppSettings.model_validate(raw)
+        return _with_default_profile(settings)
 
     # Backward compatibility with the original flat settings file.
-    return AppSettings(
+    return _with_default_profile(AppSettings(
         hotkey=raw.get("hotkey", "F8"),
+        run_toggle_hotkey=raw.get("hotkey", "F8"),
         simple={
             "action_type": raw.get("simple_action_type", "mouse"),
             "action_value": raw.get("simple_action_value", "left"),
@@ -81,7 +84,26 @@ def _load_app_settings() -> AppSettings:
             "y": raw.get("simple_y", 0),
             "position_random_px": raw.get("simple_pos_rnd", 0),
         },
-    )
+    ))
+
+
+def _with_default_profile(settings: AppSettings) -> AppSettings:
+    if settings.profiles:
+        return settings
+    settings.profiles = [
+        AutomationProfile(
+            id=settings.active_profile_id or "default-profile",
+            name="Default Profile",
+            mode=settings.mode,
+            steps=[
+                ClickStepModel(id="step-click-1", x=settings.simple.x, y=settings.simple.y),
+                WaitStepModel(id="step-wait-1", ms=1000, interval_ms=0),
+            ],
+            loops=0,
+        )
+    ]
+    settings.active_profile_id = settings.profiles[0].id
+    return settings
 
 
 def _to_action_step(step: ActionStepModel) -> ClickStep | WaitStep | PixelCheckStep | KeyTapStep:

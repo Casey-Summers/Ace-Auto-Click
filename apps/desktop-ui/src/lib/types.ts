@@ -16,11 +16,28 @@ export type SimpleSettings = {
   position_random_px: number;
 };
 
+export type AppMode = "normal" | "advanced";
+
+export type NormalProfileSettings = {
+  use_current_mouse: boolean;
+  button: "left" | "right" | "middle";
+  interval_ms: number;
+  interval_random_ms: number;
+  position_random_px: number;
+  clicks_per_cycle: number;
+  double_click: boolean;
+};
+
 export type AppSettings = {
   hotkey: string;
+  run_toggle_hotkey: string;
   emergency_stop_hotkey: string;
+  show_event_log: boolean;
+  active_profile_id: string;
+  mode: AppMode;
   simple: SimpleSettings;
   theme: "dark" | "light";
+  profiles: AutomationProfile[];
 };
 
 export type BaseStep = {
@@ -61,6 +78,15 @@ export type KeyTapStep = BaseStep & {
 };
 
 export type ActionStep = ClickStep | WaitStep | PixelCheckStep | KeyTapStep;
+
+export type AutomationProfile = {
+  id: string;
+  name: string;
+  mode: AppMode;
+  normal: NormalProfileSettings;
+  steps: ActionStep[];
+  loops: number;
+};
 
 export type PixelSample = {
   x: number;

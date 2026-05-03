@@ -18,11 +18,14 @@ class SimpleSettings(BaseModel):
     position_random_px: Annotated[int, Field(ge=0, le=5_000)] = 0
 
 
-class AppSettings(BaseModel):
-    hotkey: str = "F8"
-    emergency_stop_hotkey: str = "F12"
-    simple: SimpleSettings = Field(default_factory=SimpleSettings)
-    theme: Literal["dark", "light"] = "dark"
+class NormalProfileSettings(BaseModel):
+    use_current_mouse: bool = True
+    button: Literal["left", "right", "middle"] = "left"
+    interval_ms: Annotated[int, Field(ge=1, le=3_600_000)] = 100
+    interval_random_ms: Annotated[int, Field(ge=0, le=3_600_000)] = 0
+    position_random_px: Annotated[int, Field(ge=0, le=5_000)] = 0
+    clicks_per_cycle: Annotated[int, Field(ge=1, le=100)] = 1
+    double_click: bool = False
 
 
 class BaseStep(BaseModel):
@@ -69,6 +72,27 @@ ActionStepModel = Annotated[
     Union[ClickStepModel, WaitStepModel, PixelCheckStepModel, KeyTapStepModel],
     Field(discriminator="type"),
 ]
+
+
+class AutomationProfile(BaseModel):
+    id: str = "default-profile"
+    name: str = "Default Profile"
+    mode: Literal["normal", "advanced"] = "advanced"
+    normal: NormalProfileSettings = Field(default_factory=NormalProfileSettings)
+    steps: list[ActionStepModel] = Field(default_factory=list)
+    loops: Annotated[int, Field(ge=0, le=100_000)] = 0
+
+
+class AppSettings(BaseModel):
+    hotkey: str = "F8"
+    run_toggle_hotkey: str = "F8"
+    emergency_stop_hotkey: str = "F12"
+    show_event_log: bool = True
+    active_profile_id: str = "default-profile"
+    mode: Literal["normal", "advanced"] = "advanced"
+    simple: SimpleSettings = Field(default_factory=SimpleSettings)
+    theme: Literal["dark", "light"] = "dark"
+    profiles: list[AutomationProfile] = Field(default_factory=list)
 
 
 class SequenceRunRequest(BaseModel):
