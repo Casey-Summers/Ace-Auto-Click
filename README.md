@@ -1,9 +1,9 @@
 # Ace Auto Click
 
 Ace Auto Click is a dark-first desktop popup application for precise mouse,
-keyboard, pixel, and sequence workflows. Tauri owns the application window,
-React renders the interface, and Python owns all OS-level automation behind a
-local API.
+keyboard, pixel, and sequence workflows. Tauri owns the native application
+window, React renders inside Tauri's desktop WebView, and Python owns all
+OS-level automation behind a local API.
 
 ## Architecture
 
@@ -25,21 +25,30 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
+For development and tests, install the dev requirements:
+
+```powershell
+python -m pip install -r requirements-dev.txt
+```
+
 ## Install Frontend
 
 ```powershell
 npm.cmd --prefix apps/desktop-ui install
 ```
 
-Rust/Cargo are required to build the Tauri desktop shell. During development,
-`python app.py desktop` falls back to a native Python WebView popup if Cargo is
-not available.
+Rust/Cargo are required to run and build the Tauri desktop shell:
+
+```powershell
+winget install Rustlang.Rustup
+```
+
+Restart your terminal after installing Rust so `cargo` is available on PATH.
 
 ## Run
 
-Run the desktop app in development mode. This opens the Tauri popup application
-when Cargo is available, or a native WebView popup fallback when it is not. It
-does not use the browser as the app surface:
+Run the desktop app in development mode. This opens the Tauri popup
+application, not a browser tab:
 
 ```powershell
 python app.py desktop
@@ -51,10 +60,20 @@ Run the Python API by itself for backend/debug work:
 python app.py api
 ```
 
-Verify imports, settings migration, and API app creation:
+Verify imports, settings migration, API app creation, Node/npm availability,
+and Cargo availability:
 
 ```powershell
 python app.py check
+```
+
+Run the full dependency doctor. Add `--fix` to install safe project
+dependencies and regenerate missing Tauri icons:
+
+```powershell
+python app.py doctor
+python app.py doctor --fix
+python app.py doctor --dev --build-check
 ```
 
 Vite remains an internal development server for Tauri. Do not use the browser
@@ -74,3 +93,12 @@ python -m pytest
 npm.cmd --prefix apps/desktop-ui run test
 npm.cmd --prefix apps/desktop-ui run build
 ```
+
+## Dependency Notes
+
+- Python dependencies in `requirements.txt` are runtime backend dependencies.
+- Test-only packages live in `requirements-dev.txt`.
+- Tauri requires Rust/Cargo because it compiles the native desktop shell.
+- Vite is development tooling for Tauri's React UI; it is not supported as the
+  user-facing app surface.
+- Dependency doctor logs are written to `logs/dependency-doctor`.

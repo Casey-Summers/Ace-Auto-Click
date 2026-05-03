@@ -14,6 +14,6 @@ local API by default through `src/lib/api.ts`.
 The backend process must be started before the window becomes interactive and
 terminated when the Tauri application exits.
 
-During development, `python app.py desktop` prefers Tauri when Cargo is on PATH.
-If Cargo is unavailable, it starts the same Python API and Vite frontend inside a
-native Python WebView window so the app still runs outside the browser.
+During development, `python app.py desktop` requires Cargo on PATH. If Cargo is
+unavailable, install Rust from https://rustup.rs/ and restart the terminal
+before launching the app again.
