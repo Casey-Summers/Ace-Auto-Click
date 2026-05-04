@@ -7,7 +7,7 @@ desktop.ini
 .ruff_cache/
 logs/
 app_settings.json
-profiles/*.aceprofile.json
+profiles/*
 
 apps/desktop-ui/node_modules/
 apps/desktop-ui/dist/

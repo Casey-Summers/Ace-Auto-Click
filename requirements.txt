@@ -4,3 +4,5 @@ Pillow>=11,<12
 fastapi>=0.115,<1
 pydantic>=2.10,<3
 uvicorn>=0.34,<1
+pytest>=8,<9
+httpx>=0.28,<1
