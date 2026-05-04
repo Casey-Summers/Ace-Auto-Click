@@ -15,7 +15,8 @@ OS-level automation behind a local API.
 - `src/ace_auto_click/runtime` owns process orchestration.
 - `src/ace_auto_click/storage` owns settings and macro persistence.
 - `apps/desktop-ui` contains the Tauri/React frontend.
-- `DESIGN.md` is the UI pillar and theme source of truth.
+- `docs/DESIGN.md` is the UI pillar and theme source of truth.
+- `docs/UI_AUTHORITY.md` defines UI authority and implementation rules.
 
 ## Install Backend
 

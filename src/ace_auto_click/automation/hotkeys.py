@@ -60,6 +60,9 @@ class RuntimeHotkeyManager:
         self._listener.start()
         self._bindings = next_bindings
 
+    def set_run_toggle_handler(self, on_run_toggle: Callable[[], None]) -> None:
+        self._on_run_toggle = on_run_toggle
+
     def stop(self) -> None:
         if self._listener is not None:
             self._listener.stop()

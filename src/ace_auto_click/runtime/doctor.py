@@ -5,25 +5,23 @@ import importlib
 import json
 import platform
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from shutil import which
-from typing import Iterable, Sequence
+from typing import Sequence
+
+from ace_auto_click.runtime.commands import CommandResult, npm_command, run_command
+from ace_auto_click.runtime.diagnostics import diagnose_error
+from ace_auto_click.runtime.icons import ensure_icons, missing_icon_paths
+from ace_auto_click.runtime.requirements import parse_requirements, requirement_name
 
 
 ROOT = Path(__file__).resolve().parents[3]
 UI_DIR = ROOT / "apps" / "desktop-ui"
 TAURI_DIR = UI_DIR / "src-tauri"
 DEFAULT_LOG_DIR = ROOT / "logs" / "dependency-doctor"
-REQUIRED_ICON_PATHS = [
-    "icons/32x32.png",
-    "icons/128x128.png",
-    "icons/128x128@2x.png",
-    "icons/icon.ico",
-]
 PYTHON_IMPORTS = {
     "pyautogui": "pyautogui",
     "pynput": "pynput",
@@ -36,30 +34,6 @@ DEV_IMPORTS = {
     "pytest": "pytest",
     "httpx": "httpx",
 }
-KNOWN_DIAGNOSES = [
-    (
-        re.compile(r"icons[/\\]icon\.ico.*not found", re.IGNORECASE),
-        "Tauri Windows resource generation requires an icon file. Run `python app.py doctor --fix`.",
-    ),
-    (
-        re.compile(r"cargo.*not found|program not found", re.IGNORECASE),
-        "Rust/Cargo is required to compile Tauri. Install Rustup, restart the terminal, then rerun the command.",
-    ),
-    (
-        re.compile(r"pydantic-core.*failed|failed building wheel for pydantic-core", re.IGNORECASE | re.DOTALL),
-        "Likely Python/wheel mismatch. Prefer Python 3.12 or upgrade pip/setuptools/wheel.",
-    ),
-    (
-        re.compile(r"failed building wheel for pillow|pillow.*failed", re.IGNORECASE | re.DOTALL),
-        "Use `Pillow>=11,<12` and upgrade pip/setuptools/wheel.",
-    ),
-    (
-        re.compile(r"spawn EPERM", re.IGNORECASE),
-        "A child process was blocked by OS policy, antivirus, OneDrive sync, or sandbox permissions. Run from a trusted local folder and allow Node/esbuild to spawn.",
-    ),
-]
-
-
 @dataclass
 class CheckResult:
     status: str
@@ -302,117 +276,8 @@ class Doctor:
         else:
             print("Next action: run `python app.py desktop`.")
 
-
-@dataclass
-class CommandResult:
-    args: Sequence[str]
-    cwd: Path
-    returncode: int
-    stdout: str
-    stderr: str
-
-    def output_summary(self) -> str:
-        text = (self.stdout or self.stderr).strip().splitlines()
-        return text[0] if text else f"exit {self.returncode}"
-
-
-def run_command(args: Sequence[str], cwd: Path) -> CommandResult:
-    try:
-        completed = subprocess.run(args, cwd=cwd, text=True, capture_output=True, timeout=180)
-        return CommandResult(args, cwd, completed.returncode, completed.stdout, completed.stderr)
-    except FileNotFoundError as exc:
-        return CommandResult(args, cwd, 127, "", str(exc))
-    except subprocess.TimeoutExpired as exc:
-        return CommandResult(args, cwd, 124, exc.stdout or "", exc.stderr or "Command timed out.")
-
-
-def parse_requirements(path: Path) -> list[str]:
-    entries = []
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.split("#", 1)[0].strip()
-        if line:
-            entries.append(line)
-    return entries
-
-
-def requirement_name(requirement: str) -> str:
-    if requirement.startswith("-r "):
-        return ""
-    match = re.match(r"([A-Za-z0-9_.-]+)", requirement)
-    return match.group(1) if match else ""
-
-
-def missing_icon_paths(config: dict, tauri_dir: Path) -> list[str]:
-    icon_paths = config.get("bundle", {}).get("icon", [])
-    return [path for path in icon_paths if not (tauri_dir / path).exists()]
-
-
-def diagnose_error(output: str) -> str:
-    for pattern, diagnosis in KNOWN_DIAGNOSES:
-        if pattern.search(output):
-            return diagnosis
-    return ""
-
-
-def ensure_icons(tauri_dir: Path) -> bool:
-    icons_dir = tauri_dir / "icons"
-    icons_dir.mkdir(parents=True, exist_ok=True)
-    missing = [path for path in REQUIRED_ICON_PATHS if not (tauri_dir / path).exists()]
-    if not missing:
-        return False
-
-    try:
-        from PIL import Image, ImageDraw
-    except Exception as exc:
-        raise SystemExit(f"Pillow is required to generate icons: {exc}") from exc
-
-    png_sizes = {
-        "icons/32x32.png": 32,
-        "icons/128x128.png": 128,
-        "icons/128x128@2x.png": 256,
-    }
-    images = []
-    for relative_path, size in png_sizes.items():
-        image = _make_icon(size)
-        image.save(tauri_dir / relative_path)
-        images.append(image)
-    images[1].save(tauri_dir / "icons/icon.ico", sizes=[(32, 32), (64, 64), (128, 128), (256, 256)])
-    return True
-
-
-def _make_icon(size: int):
-    from PIL import Image, ImageDraw
-
-    image = Image.new("RGBA", (size, size), "#07080a")
-    draw = ImageDraw.Draw(image)
-    margin = max(3, size // 10)
-    draw.rounded_rectangle(
-        [margin, margin, size - margin, size - margin],
-        radius=max(6, size // 8),
-        fill="#101111",
-        outline="#ff6363",
-        width=max(1, size // 24),
-    )
-    cursor = [
-        (size * 0.35, size * 0.23),
-        (size * 0.35, size * 0.72),
-        (size * 0.48, size * 0.61),
-        (size * 0.58, size * 0.79),
-        (size * 0.69, size * 0.73),
-        (size * 0.58, size * 0.56),
-        (size * 0.75, size * 0.55),
-    ]
-    draw.polygon(cursor, fill="#f9f9f9")
-    draw.ellipse(
-        [size * 0.57, size * 0.24, size * 0.76, size * 0.43],
-        outline="#55b3ff",
-        width=max(1, size // 18),
-    )
-    return image
-
-
 def _npm_command() -> str:
-    return "npm.cmd" if sys.platform == "win32" else "npm"
+    return npm_command()
 
 
 def run_doctor(args: argparse.Namespace) -> int:
