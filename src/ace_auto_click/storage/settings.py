@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
-from typing import Any, Dict, List, Tuple
+from pathlib import Path
+from typing import Any, Dict, List
+
+
+ROOT = Path(__file__).resolve().parents[3]
+SETTINGS_PATH = ROOT / "app_settings.json"
 
 
 def save_macro(path: str, events: List[Dict[str, Any]]) -> None:
@@ -22,13 +26,13 @@ def load_macro(path: str) -> List[Dict[str, Any]]:
 
 
 def save_settings(settings: Dict[str, Any]) -> None:
-    with open("app_settings.json", "w", encoding="utf-8") as f:
+    with SETTINGS_PATH.open("w", encoding="utf-8") as f:
         json.dump(settings, f, indent=2)
 
 
 def load_settings() -> Dict[str, Any]:
     try:
-        with open("app_settings.json", "r", encoding="utf-8") as f:
+        with SETTINGS_PATH.open("r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except (FileNotFoundError, json.JSONDecodeError):
         return {}

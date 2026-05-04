@@ -3,17 +3,17 @@ from __future__ import annotations
 import random
 import threading
 import time
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple, Any
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
 
 import pyautogui
 from pynput import keyboard, mouse
-# Optimize pyautogui
+# Optimize pyautogui without disabling the emergency corner failsafe.
 pyautogui.PAUSE = 0
-pyautogui.FAILSAFE = False
+pyautogui.FAILSAFE = True
 
-from pixel_match import PixelCondition, should_run_clicking
-from actions import ActionStep
+from ace_auto_click.automation.actions import ActionStep
+from ace_auto_click.automation.pixels import PixelCondition, should_run_clicking
 
 StatusCb = Callable[[str], None]
 
@@ -45,10 +45,6 @@ class ClickEngine:
     def stop(self) -> None:
         """Stops the current thread without blocking the UI."""
         self._stop_evt.set()
-        # We don't join here because it blocks the UI thread.
-        # The thread will clean itself up when it checks the event.
-        self._active_thread = None
-        # We'll clear the event later or in the start methods
 
     def start_clicking(
         self, settings: ClickSettings, pixel_cond: PixelCondition
@@ -102,6 +98,7 @@ class ClickEngine:
                 self._on_status(f"Error: {e}")
             finally:
                 self._on_status("Simple Mode: OFF")
+                self._active_thread = None
 
         self._active_thread = threading.Thread(target=run, daemon=True)
         self._active_thread.start()
@@ -140,6 +137,7 @@ class ClickEngine:
                 self._on_status(f"Error: {e}")
             finally:
                 self._on_status("Advanced Mode: OFF")
+                self._active_thread = None
 
         self._active_thread = threading.Thread(target=run, daemon=True)
         self._active_thread.start()
@@ -180,6 +178,7 @@ class ClickEngine:
                         self._execute_event(ev)
             finally:
                 self._on_status("Macro: OFF")
+                self._active_thread = None
 
         self._active_thread = threading.Thread(target=run, daemon=True)
         self._active_thread.start()

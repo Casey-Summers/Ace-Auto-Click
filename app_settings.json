@@ -1,12 +1,83 @@
 {
   "hotkey": "`",
-  "simple_action_type": "mouse",
-  "simple_action_value": "left",
-  "simple_interval": 100,
-  "simple_interval_rnd": 150,
-  "simple_x": 1020,
-  "simple_y": 820,
-  "simple_pos_rnd": 0,
-  "target_window_title": "World of Warcraft",
-  "use_direct_click": false
+  "run_toggle_hotkey": "`",
+  "emergency_stop_hotkey": "F12",
+  "show_event_log": true,
+  "active_profile_id": "default-profile",
+  "mode": "advanced",
+  "simple": {
+    "action_type": "mouse",
+    "action_value": "left",
+    "interval_ms": 100,
+    "interval_random_ms": 150,
+    "x": 1020,
+    "y": 820,
+    "position_random_px": 0
+  },
+  "theme": "dark",
+  "profiles": [
+    {
+      "id": "default-profile",
+      "name": "Test Profile",
+      "mode": "advanced",
+      "normal": {
+        "use_current_mouse": true,
+        "button": "left",
+        "interval_ms": 100,
+        "interval_random_ms": 0,
+        "position_random_px": 0,
+        "clicks_per_cycle": 1,
+        "double_click": false
+      },
+      "steps": [
+        {
+          "id": "step-wait-1",
+          "type": "wait",
+          "enabled": true,
+          "repeats": 1,
+          "interval_ms": 0,
+          "randomness_ms": 0,
+          "ms": 3000,
+          "random_ms": 0
+        },
+        {
+          "id": "step-loop_start-1777871565933",
+          "type": "loop_start",
+          "enabled": true,
+          "repeats": 1,
+          "interval_ms": 100,
+          "randomness_ms": 0,
+          "loop_id": "loop-1777871565933",
+          "loop_count": 1,
+          "loop_infinite": false,
+          "collapsed": true
+        },
+        {
+          "id": "step-loop_end-1777871565933",
+          "type": "loop_end",
+          "enabled": true,
+          "repeats": 1,
+          "interval_ms": 100,
+          "randomness_ms": 0,
+          "loop_id": "loop-1777871565933"
+        },
+        {
+          "id": "step-click-1",
+          "type": "click",
+          "enabled": true,
+          "repeats": 1,
+          "interval_ms": 100,
+          "randomness_ms": 0,
+          "x": 1020,
+          "y": 820,
+          "button": "left",
+          "clicks": 1,
+          "random_offset": 0
+        }
+      ],
+      "loops": 1,
+      "loops_count": 1,
+      "loops_infinite": false
+    }
+  ]
 }

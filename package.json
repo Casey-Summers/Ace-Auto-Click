@@ -1,0 +1,14 @@
+{
+  "name": "ace-auto-click-workspace",
+  "private": true,
+  "scripts": {
+    "desktop:dev": "python app.py desktop",
+    "desktop:tauri": "npm --prefix apps/desktop-ui run tauri dev",
+    "desktop:build": "npm --prefix apps/desktop-ui run build",
+    "desktop:test": "npm --prefix apps/desktop-ui run test",
+    "python:check": "python app.py check",
+    "python:test": "python -m pytest",
+    "python:install": "python -m pip install -r requirements.txt",
+    "python:install-dev": "python -m pip install -r requirements-dev.txt"
+  }
+}

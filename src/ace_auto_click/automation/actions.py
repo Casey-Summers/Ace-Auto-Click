@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import time
 import random
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
-import pyautogui
-from pynput import mouse, keyboard
-from pixel_match import PixelCondition, should_run_clicking, get_pixel_rgb, rgb_close
+from dataclasses import dataclass
+from typing import Any, Tuple
+
+from pynput import mouse
+
+from ace_auto_click.automation.pixels import get_pixel_rgb, rgb_close
 
 
 @dataclass
