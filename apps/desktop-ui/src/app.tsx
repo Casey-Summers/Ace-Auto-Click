@@ -3,13 +3,12 @@ import { Settings, Zap } from "lucide-react";
 
 import { EmergencyStopButton } from "./components/EmergencyStopButton";
 import { ModeToggle } from "./components/ModeToggle";
-import { Keycap } from "./components/keycap";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { ActionLibrary } from "./features/actions/ActionLibrary";
 import { EventLogPanel } from "./features/log/EventLogPanel";
-import { RuntimePanel } from "./features/runtime/RuntimePanel";
-import { SettingsPanel } from "./features/settings/SettingsPanel";
+import { ProfileManager } from "./features/runtime/RuntimePanel";
+import { SettingsModal } from "./features/settings/SettingsPanel";
 import { NormalRunPanel } from "./features/sequence/NormalRunPanel";
 import { NormalDetailsPanel, StepDetailsPanel } from "./features/sequence/StepDetailsPanel";
 import { SequenceBuilder } from "./features/sequence/SequenceBuilder";
@@ -17,7 +16,7 @@ import { AppShell } from "./layouts/AppShell";
 import { api } from "./lib/api";
 import { defaultProfile, defaultSettings } from "./lib/defaults";
 import { createStep } from "./lib/steps";
-import type { ActionStep, AppMode, AppSettings, AutomationProfile, RuntimeState } from "./lib/types";
+import type { ActionStep, AppMode, AppSettings, AutomationProfile, ProfileFile, RuntimeState } from "./lib/types";
 
 const defaultState: RuntimeState = {
   product_name: "Ace Auto Click",
@@ -49,6 +48,8 @@ export function App() {
   const [selectedId, setSelectedId] = useState(defaultProfile.steps[0].id);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [focusEmergency, setFocusEmergency] = useState(false);
+  const [profileFiles, setProfileFiles] = useState<ProfileFile[]>([]);
+  const [selectedProfileFile, setSelectedProfileFile] = useState("");
   const [log, setLog] = useState<string[]>(["UI ready. Start the API with python app.py api."]);
 
   const activeProfile = useMemo(
@@ -65,10 +66,11 @@ export function App() {
   }, [settings.theme]);
 
   useEffect(() => {
-    Promise.all([api.getSettings(), api.getState()])
-      .then(([nextSettings, nextState]) => {
+    Promise.all([api.getSettings(), api.getState(), api.listProfiles()])
+      .then(([nextSettings, nextState, nextProfileFiles]) => {
         setSettings(normalizeSettings(nextSettings));
         setState(nextState);
+        setProfileFiles(nextProfileFiles);
         setLog((items) => [`Connected to ${nextState.product_name}.`, ...items]);
       })
       .catch((error) => setLog((items) => [`API unavailable: ${error.message}`, ...items]));
@@ -131,10 +133,26 @@ export function App() {
     patchSettings({ mode: "advanced" });
   };
 
-  const saveSettings = async () => {
-    const next = await api.saveSettings(settings);
+  const saveProfile = async () => {
+    const saved = await api.saveProfile(settings);
+    const nextProfileFiles = await api.listProfiles();
+    setProfileFiles(nextProfileFiles);
+    setSelectedProfileFile(saved.file_name);
+    setLog((items) => [`Saved profile ${saved.profile_name}.`, ...items]);
+  };
+
+  const loadProfile = async () => {
+    if (!selectedProfileFile) return;
+    const next = await api.loadProfile(selectedProfileFile);
     setSettings(normalizeSettings(next));
-    setLog((items) => [`Saved profile ${activeProfile.name}.`, ...items]);
+    const nextProfileFiles = await api.listProfiles();
+    setProfileFiles(nextProfileFiles);
+    setLog((items) => [`Loaded profile ${selectedProfileFile}.`, ...items]);
+  };
+
+  const openProfilesFolder = async () => {
+    await api.openProfilesFolder();
+    setLog((items) => ["Opened profiles folder.", ...items]);
   };
 
   const emergencyStop = async () => {
@@ -226,10 +244,22 @@ export function App() {
 
   const left = (
     <>
-      <RuntimePanel state={state} onSaveProfile={saveSettings} />
       <ActionLibrary onAdd={addStep} />
       <div className="mt-auto">{settings.show_event_log ? <EventLogPanel log={log} /> : null}</div>
     </>
+  );
+
+  const centerTop = (
+    <ProfileManager
+      state={state}
+      activeProfile={activeProfile}
+      profileFiles={profileFiles}
+      selectedProfileFile={selectedProfileFile}
+      onSelectedProfileFileChange={setSelectedProfileFile}
+      onSaveProfile={saveProfile}
+      onLoadProfile={loadProfile}
+      onOpenProfilesFolder={openProfilesFolder}
+    />
   );
 
   const center = settings.mode === "advanced" ? (
@@ -254,17 +284,7 @@ export function App() {
     />
   );
 
-  const right = settingsOpen ? (
-    <SettingsPanel
-      settings={settings}
-      activeProfile={activeProfile}
-      running={state.running}
-      focusEmergency={focusEmergency}
-      onSettingsChange={patchSettings}
-      onProfileChange={patchProfile}
-      onClose={() => setSettingsOpen(false)}
-    />
-  ) : settings.mode === "normal" ? (
+  const right = settings.mode === "normal" ? (
     <NormalDetailsPanel
       normal={activeProfile.normal}
       onChange={(normalPatch) => patchProfile({ normal: { ...activeProfile.normal, ...normalPatch } })}
@@ -273,5 +293,23 @@ export function App() {
     <StepDetailsPanel step={selectedStep} onChange={patchSelected} onSamplePixel={samplePixel} />
   );
 
-  return <AppShell header={header} left={left} center={center} right={right} />;
+  return (
+    <>
+      <AppShell header={header} left={left} centerTop={centerTop} center={center} right={right} />
+      {settingsOpen ? (
+        <SettingsModal
+          settings={settings}
+          activeProfile={activeProfile}
+          running={state.running}
+          focusEmergency={focusEmergency}
+          onSettingsChange={patchSettings}
+          onProfileChange={patchProfile}
+          onClose={() => {
+            setSettingsOpen(false);
+            setFocusEmergency(false);
+          }}
+        />
+      ) : null}
+    </>
+  );
 }

@@ -6,6 +6,13 @@ export type RuntimeState = {
   last_error: string | null;
 };
 
+export type ProfileFile = {
+  file_name: string;
+  profile_name: string;
+  modified_at: string;
+  size: number;
+};
+
 export type SimpleSettings = {
   action_type: "mouse" | "keyboard";
   action_value: string;

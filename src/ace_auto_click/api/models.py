@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal, Optional, Tuple, Union
+from typing import Annotated, Any, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field
 
@@ -81,6 +81,20 @@ class AutomationProfile(BaseModel):
     normal: NormalProfileSettings = Field(default_factory=NormalProfileSettings)
     steps: list[ActionStepModel] = Field(default_factory=list)
     loops: Annotated[int, Field(ge=0, le=100_000)] = 0
+
+
+class ProfileExport(BaseModel):
+    schema_version: Literal[1] = 1
+    exported_by: str = ProductName
+    profile: AutomationProfile
+    app_settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProfileFile(BaseModel):
+    file_name: str
+    profile_name: str
+    modified_at: str
+    size: int
 
 
 class AppSettings(BaseModel):

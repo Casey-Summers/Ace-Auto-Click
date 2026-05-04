@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from ace_auto_click.api.models import AppSettings, AutomationProfile, ClickStepModel, SequenceRunRequest, SimpleSettings
+from ace_auto_click.api.models import AppSettings, AutomationProfile, ClickStepModel, ProfileExport, SequenceRunRequest, SimpleSettings
 
 
 def test_simple_settings_rejects_zero_interval() -> None:
@@ -38,3 +38,20 @@ def test_sequence_request_accepts_loop_count() -> None:
     request = SequenceRunRequest(steps=[ClickStepModel(id="click-1")], loops=5)
 
     assert request.loops == 5
+
+
+def test_profile_export_preserves_profile_contract() -> None:
+    export = ProfileExport(
+        profile=AutomationProfile(
+            id="profile-1",
+            name="Saved Profile",
+            mode="advanced",
+            steps=[ClickStepModel(id="click-1", x=10, y=20)],
+            loops=3,
+        ),
+        app_settings={"run_toggle_hotkey": "F8", "emergency_stop_hotkey": "F12"},
+    )
+
+    assert export.schema_version == 1
+    assert export.profile.steps[0].x == 10
+    assert export.profile.loops == 3

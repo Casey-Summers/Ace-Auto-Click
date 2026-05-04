@@ -30,10 +30,18 @@ def main() -> None:
     check_parser.set_defaults(target="check")
 
     doctor_parser = subparsers.add_parser("doctor", help="Run the dependency doctor.")
-    doctor_parser.add_argument("--fix", action="store_true", help="Attempt safe automated fixes.")
-    doctor_parser.add_argument("--dev", action="store_true", help="Check development dependencies too.")
-    doctor_parser.add_argument("--build-check", action="store_true", help="Run the frontend build check.")
-    doctor_parser.add_argument("--log-dir", default=str(ROOT / "logs" / "dependency-doctor"))
+    doctor_parser.add_argument(
+        "--fix", action="store_true", help="Attempt safe automated fixes."
+    )
+    doctor_parser.add_argument(
+        "--dev", action="store_true", help="Check development dependencies too."
+    )
+    doctor_parser.add_argument(
+        "--build-check", action="store_true", help="Run the frontend build check."
+    )
+    doctor_parser.add_argument(
+        "--log-dir", default=str(ROOT / "logs" / "dependency-doctor")
+    )
     doctor_parser.set_defaults(target="doctor")
 
     parser.set_defaults(target="desktop")
@@ -47,6 +55,7 @@ def main() -> None:
         raise SystemExit(run_doctor(args))
     else:
         run_desktop_dev()
+
 
 if __name__ == "__main__":
     main()

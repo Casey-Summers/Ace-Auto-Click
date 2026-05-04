@@ -15,6 +15,7 @@ from ace_auto_click.api.models import (
     KeyTapStepModel,
     PixelCheckStepModel,
     PixelSample,
+    ProfileFile,
     ProductName,
     RuntimeState,
     SequenceRunRequest,
@@ -28,8 +29,15 @@ from ace_auto_click.automation.actions import (
     WaitStep,
 )
 from ace_auto_click.automation.engine import ClickEngine, ClickSettings
+from ace_auto_click.automation.hotkeys import EmergencyHotkeyManager
 from ace_auto_click.automation.pixels import PixelCondition, get_pixel_rgb
 from ace_auto_click.automation.recorder import ActionRecorder
+from ace_auto_click.storage.profiles import (
+    list_profile_files,
+    load_profile_export,
+    open_profiles_folder,
+    save_profile_export,
+)
 from ace_auto_click.storage.settings import load_settings, save_settings
 
 
@@ -54,6 +62,17 @@ def _set_status(message: str) -> None:
 
 engine = ClickEngine(on_status=_set_status)
 recorder = ActionRecorder()
+
+
+def _trigger_emergency_stop() -> RuntimeState:
+    engine.stop()
+    if recorder.is_recording():
+        recorder.stop()
+    _set_status("Emergency stop")
+    return _state()
+
+
+hotkeys = EmergencyHotkeyManager(on_trigger=_trigger_emergency_stop)
 
 
 def _state() -> RuntimeState:
@@ -137,7 +156,25 @@ def get_settings() -> AppSettings:
 @app.put("/settings", response_model=AppSettings)
 def put_settings(settings: AppSettings) -> AppSettings:
     save_settings(settings.model_dump())
+    _bind_emergency_hotkey(settings)
     return settings
+
+
+def _bind_emergency_hotkey(settings: AppSettings | None = None) -> None:
+    try:
+        hotkeys.bind((settings or _load_app_settings()).emergency_stop_hotkey)
+    except Exception as exc:
+        _set_status(f"Error: emergency hotkey unavailable ({exc})")
+
+
+@app.on_event("startup")
+def startup() -> None:
+    _bind_emergency_hotkey()
+
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    hotkeys.stop()
 
 
 @app.post("/run/simple", response_model=CommandResult)
@@ -175,11 +212,67 @@ def stop() -> CommandResult:
 
 @app.post("/emergency-stop", response_model=CommandResult)
 def emergency_stop() -> CommandResult:
-    engine.stop()
-    if recorder.is_recording():
-        recorder.stop()
-    _set_status("Emergency stop")
-    return CommandResult(state=_state(), message="Emergency stop triggered.")
+    return CommandResult(state=_trigger_emergency_stop(), message="Emergency stop triggered.")
+
+
+@app.get("/profiles", response_model=list[ProfileFile])
+def profiles() -> list[ProfileFile]:
+    return [ProfileFile.model_validate(item) for item in list_profile_files()]
+
+
+@app.post("/profiles/save", response_model=ProfileFile)
+def save_profile(settings: AppSettings) -> ProfileFile:
+    profile = next(
+        (
+            candidate
+            for candidate in settings.profiles
+            if candidate.id == settings.active_profile_id
+        ),
+        None,
+    )
+    if profile is None:
+        raise HTTPException(status_code=400, detail="Active profile was not found.")
+    save_settings(settings.model_dump())
+    _bind_emergency_hotkey(settings)
+    return ProfileFile.model_validate(save_profile_export(settings, profile))
+
+
+@app.post("/profiles/load/{file_name}", response_model=AppSettings)
+def load_profile(file_name: str) -> AppSettings:
+    try:
+        profile_export = load_profile_export(file_name)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    settings = _load_app_settings()
+    imported_profile = profile_export.profile
+    profiles = [
+        profile
+        for profile in settings.profiles
+        if profile.id != imported_profile.id
+    ]
+    profiles.append(imported_profile)
+    settings.profiles = profiles
+    settings.active_profile_id = imported_profile.id
+    for key, value in profile_export.app_settings.items():
+        if hasattr(settings, key):
+            setattr(settings, key, value)
+    try:
+        settings = AppSettings.model_validate(settings.model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    save_settings(settings.model_dump())
+    _bind_emergency_hotkey(settings)
+    return settings
+
+
+@app.post("/profiles/open-folder")
+def open_profile_folder() -> dict[str, str]:
+    try:
+        open_profiles_folder()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"message": "Profiles folder opened."}
 
 
 @app.get("/mouse-position")

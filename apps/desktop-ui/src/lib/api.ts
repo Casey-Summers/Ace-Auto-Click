@@ -1,4 +1,4 @@
-import type { ActionStep, AppSettings, PixelSample, RuntimeState, SimpleSettings } from "./types";
+import type { ActionStep, AppSettings, PixelSample, ProfileFile, RuntimeState, SimpleSettings } from "./types";
 
 const API_BASE = import.meta.env.VITE_ACE_API_BASE ?? "http://127.0.0.1:8765";
 
@@ -40,6 +40,18 @@ export const api = {
   stop: () => request<{ state: RuntimeState }>("/stop", { method: "POST" }),
   emergencyStop: () =>
     request<{ state: RuntimeState }>("/emergency-stop", { method: "POST" }),
+  listProfiles: () => request<ProfileFile[]>("/profiles"),
+  saveProfile: (settings: AppSettings) =>
+    request<ProfileFile>("/profiles/save", {
+      method: "POST",
+      body: JSON.stringify(settings)
+    }),
+  loadProfile: (fileName: string) =>
+    request<AppSettings>(`/profiles/load/${encodeURIComponent(fileName)}`, {
+      method: "POST"
+    }),
+  openProfilesFolder: () =>
+    request<{ message: string }>("/profiles/open-folder", { method: "POST" }),
   mousePosition: () => request<{ x: number; y: number }>("/mouse-position"),
   pixel: (x: number, y: number) => request<PixelSample>(`/pixel?x=${x}&y=${y}`)
 };
