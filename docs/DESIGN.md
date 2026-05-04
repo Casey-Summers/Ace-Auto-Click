@@ -1,4 +1,4 @@
-# Ace Auto Click UI Pillar
+﻿# Ace Auto Click UI Pillar
 
 Ace Auto Click uses a Raycast-inspired design pillar for a dark-first,
 keyboard-centric desktop utility. This file is the source of truth for UI
