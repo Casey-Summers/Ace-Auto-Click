@@ -34,7 +34,6 @@ function normalizeSettings(settings: AppSettings): AppSettings {
   return {
     ...defaultSettings,
     ...settings,
-    profiles,
     active_profile_id,
     run_toggle_hotkey: settings.run_toggle_hotkey || settings.hotkey || "F8",
     emergency_stop_hotkey: settings.emergency_stop_hotkey || "F12",
@@ -59,6 +58,7 @@ export function App() {
   const [profileError, setProfileError] = useState("");
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
+  const [pickingClickStepId, setPickingClickStepId] = useState("");
   const settingsHydrated = useRef(false);
   const [log, setLog] = useState<string[]>(["UI ready. Start the API with python app.py api."]);
 
@@ -160,7 +160,38 @@ export function App() {
 
   const patchSteps = (steps: ActionStep[]) => patchProfile({ steps });
 
+  const findLoopRange = (steps: ActionStep[], startIndex: number) => {
+    const start = steps[startIndex];
+    if (!start || start.type !== "loop_start") return null;
+    let depth = 1;
+    for (let index = startIndex + 1; index < steps.length; index += 1) {
+      const step = steps[index];
+      if (step.type === "loop_start") depth += 1;
+      if (step.type === "loop_end") depth -= 1;
+      if (depth === 0 && step.type === "loop_end" && step.loop_id === start.loop_id) {
+        return { startIndex, endIndex: index };
+      }
+    }
+    return null;
+  };
+
   const patchSelected = (patch: Partial<ActionStep>) => {
+    if (selectedStep?.type === "loop_start" && patch.enabled !== undefined) {
+      const startIndex = activeProfile.steps.findIndex((step) => step.id === selectedStep.id);
+      const range = findLoopRange(activeProfile.steps, startIndex);
+      if (range) {
+        patchSteps(
+          activeProfile.steps.map((step, index) =>
+            index >= range.startIndex && index <= range.endIndex
+              ? step.type === "loop_start"
+                ? ({ ...step, enabled: patch.enabled, collapsed: !patch.enabled ? true : step.collapsed } as ActionStep)
+                : ({ ...step, enabled: patch.enabled } as ActionStep)
+              : step
+          )
+        );
+        return;
+      }
+    }
     patchSteps(
       activeProfile.steps.map((step) =>
         step.id === selectedStep?.id ? ({ ...step, ...patch } as ActionStep) : step
@@ -287,6 +318,26 @@ export function App() {
     setLog((items) => [`Sampled pixel ${sample.rgb.join(", ")}.`, ...items]);
   };
 
+  const pickClickPosition = async () => {
+    if (!selectedStep || selectedStep.type !== "click") return;
+    setPickingClickStepId(selectedStep.id);
+    try {
+      const position = await api.pickClickPosition();
+      patchSteps(
+        activeProfile.steps.map((step) =>
+          step.id === selectedStep.id && step.type === "click"
+            ? { ...step, x: position.x, y: position.y }
+            : step
+        )
+      );
+      setLog((items) => [`Picked click position ${position.x}, ${position.y}.`, ...items]);
+    } catch (error) {
+      setLog((items) => [`Position picker failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
+    } finally {
+      setPickingClickStepId("");
+    }
+  };
+
   const setMode = (mode: AppMode) => {
     patchSettings({ mode });
     patchProfile({ mode });
@@ -377,7 +428,13 @@ export function App() {
       onChange={(normalPatch) => patchProfile({ normal: { ...activeProfile.normal, ...normalPatch } })}
     />
   ) : (
-    <StepDetailsPanel step={selectedStep} onChange={patchSelected} onSamplePixel={samplePixel} />
+    <StepDetailsPanel
+      step={selectedStep}
+      pickingClickPosition={selectedStep?.id === pickingClickStepId}
+      onChange={patchSelected}
+      onSamplePixel={samplePixel}
+      onPickClickPosition={pickClickPosition}
+    />
   );
 
   return (

@@ -41,7 +41,7 @@ export function NormalDetailsPanel({ normal, onChange }: { normal: NormalProfile
   );
 }
 
-export function StepDetailsPanel({ step, onChange, onSamplePixel }: { step?: ActionStep; onChange: (patch: Partial<ActionStep>) => void; onSamplePixel: () => void; }) {
+export function StepDetailsPanel({ step, pickingClickPosition, onChange, onSamplePixel, onPickClickPosition }: { step?: ActionStep; pickingClickPosition?: boolean; onChange: (patch: Partial<ActionStep>) => void; onSamplePixel: () => void; onPickClickPosition: () => void; }) {
   if (!step) return <CollapsibleSection title="Selected Step" defaultOpen><p className="text-sm text-muted-foreground">Select a step to edit details.</p></CollapsibleSection>;
   return (
     <CollapsibleSection title="Selected Step">
@@ -52,6 +52,14 @@ export function StepDetailsPanel({ step, onChange, onSamplePixel }: { step?: Act
             <Button variant={!step.enabled ? "danger" : "ghost"} onClick={() => onChange({ enabled: false })}>Disabled</Button>
           </div>
         </FieldRow>
+
+        {step.type === "click" ? (
+          <FieldRow title="Position Picker" info="Waits for the next click and records its exact screen location for this click action.">
+            <Button variant={pickingClickPosition ? "success" : "default"} onClick={onPickClickPosition} disabled={pickingClickPosition}>
+              {pickingClickPosition ? "Waiting for click location" : "Pick click position"}
+            </Button>
+          </FieldRow>
+        ) : null}
 
         <FieldRow title="Repeat Count" info="Number of times this step repeats before the next step."><Input type="number" value={step.repeats} onChange={(event) => onChange({ repeats: Number(event.target.value) })} /></FieldRow>
         <FieldRow title="Base Delay (ms)" info="Delay after each execution of this step."><Input type="number" value={step.interval_ms} onChange={(event) => onChange({ interval_ms: Number(event.target.value) })} /></FieldRow>

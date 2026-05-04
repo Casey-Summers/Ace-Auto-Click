@@ -31,19 +31,6 @@
       },
       "steps": [
         {
-          "id": "step-click-1",
-          "type": "click",
-          "enabled": true,
-          "repeats": 1,
-          "interval_ms": 100,
-          "randomness_ms": 0,
-          "x": 1020,
-          "y": 820,
-          "button": "left",
-          "clicks": 1,
-          "random_offset": 0
-        },
-        {
           "id": "step-wait-1",
           "type": "wait",
           "enabled": true,
@@ -63,7 +50,7 @@
           "loop_id": "loop-1777871565933",
           "loop_count": 1,
           "loop_infinite": false,
-          "collapsed": false
+          "collapsed": true
         },
         {
           "id": "step-loop_end-1777871565933",
@@ -73,6 +60,19 @@
           "interval_ms": 100,
           "randomness_ms": 0,
           "loop_id": "loop-1777871565933"
+        },
+        {
+          "id": "step-click-1",
+          "type": "click",
+          "enabled": true,
+          "repeats": 1,
+          "interval_ms": 100,
+          "randomness_ms": 0,
+          "x": 1020,
+          "y": 820,
+          "button": "left",
+          "clicks": 1,
+          "random_offset": 0
         }
       ],
       "loops": 1,

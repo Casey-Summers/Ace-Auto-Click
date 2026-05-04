@@ -55,5 +55,7 @@ export const api = {
   openProfilesFolder: () =>
     request<{ message: string }>("/profiles/open-folder", { method: "POST" }),
   mousePosition: () => request<{ x: number; y: number }>("/mouse-position"),
+  pickClickPosition: () =>
+    request<{ x: number; y: number }>("/mouse-position/next-click", { method: "POST" }),
   pixel: (x: number, y: number) => request<PixelSample>(`/pixel?x=${x}&y=${y}`)
 };

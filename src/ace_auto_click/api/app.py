@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import threading
 
 import pyautogui
 from fastapi import FastAPI, HTTPException
@@ -34,6 +35,7 @@ from ace_auto_click.automation.actions import (
 from ace_auto_click.automation.engine import ClickEngine, ClickSettings
 from ace_auto_click.automation.hotkeys import RuntimeHotkeyManager
 from ace_auto_click.automation.pixels import PixelCondition, get_pixel_rgb
+from pynput import mouse
 from ace_auto_click.automation.recorder import ActionRecorder
 from ace_auto_click.storage.profiles import (
     ensure_profiles_dir,
@@ -383,6 +385,28 @@ def open_profile_folder() -> dict[str, str]:
 def mouse_position() -> dict[str, int]:
     x, y = pyautogui.position()
     return {"x": int(x), "y": int(y)}
+
+
+@app.post("/mouse-position/next-click")
+def next_click_position() -> dict[str, int]:
+    clicked: dict[str, int] = {}
+    ready = threading.Event()
+
+    def on_click(x: int, y: int, _button: object, pressed: bool) -> bool | None:
+        if pressed:
+            clicked["x"] = int(x)
+            clicked["y"] = int(y)
+            ready.set()
+            return False
+        return None
+
+    listener = mouse.Listener(on_click=on_click)
+    listener.start()
+    if not ready.wait(timeout=30):
+        listener.stop()
+        raise HTTPException(status_code=408, detail="Timed out waiting for click location.")
+    listener.join(timeout=1)
+    return clicked
 
 
 @app.get("/pixel", response_model=PixelSample)
