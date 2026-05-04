@@ -38,7 +38,12 @@ function normalizeSettings(settings: AppSettings): AppSettings {
     active_profile_id,
     run_toggle_hotkey: settings.run_toggle_hotkey || settings.hotkey || "F8",
     emergency_stop_hotkey: settings.emergency_stop_hotkey || "F12",
-    show_event_log: settings.show_event_log ?? true
+    show_event_log: settings.show_event_log ?? true,
+    profiles: profiles.map((profile) => ({
+      ...profile,
+      loops_count: profile.loops_count ?? Math.max(1, profile.loops ?? 1),
+      loops_infinite: profile.loops_infinite ?? (profile.loops === 0)
+    }))
   };
 }
 
@@ -164,9 +169,17 @@ export function App() {
   };
 
   const addStep = (type: ActionStep["type"]) => {
-    const step = createStep(type);
-    patchSteps([...activeProfile.steps, step]);
-    setSelectedId(step.id);
+    if (type === "loop_start") {
+      const loopId = `loop-${Date.now()}`;
+      const start = { ...createStep("loop_start"), loop_id: loopId };
+      const end = { ...createStep("loop_end"), loop_id: loopId };
+      patchSteps([...activeProfile.steps, start, end]);
+      setSelectedId(start.id);
+    } else {
+      const step = createStep(type);
+      patchSteps([...activeProfile.steps, step]);
+      setSelectedId(step.id);
+    }
     patchProfile({ mode: "advanced" });
     patchSettings({ mode: "advanced" });
   };
@@ -234,7 +247,7 @@ export function App() {
       await emergencyStop();
       return;
     }
-    const result = await api.runSequence(await sequenceForRun(), activeProfile.loops);
+    const result = await api.runSequence(await sequenceForRun(), activeProfile.loops_count, activeProfile.loops_infinite);
     setState(result.state);
     setLog((items) => [`Running ${activeProfile.name}.`, ...items]);
   };
@@ -337,11 +350,14 @@ export function App() {
     <SequenceBuilder
       steps={activeProfile.steps}
       loops={activeProfile.loops}
+      loopsCount={activeProfile.loops_count}
+      loopsInfinite={activeProfile.loops_infinite}
       running={state.running}
       runHotkey={settings.run_toggle_hotkey}
       selectedId={selectedStep?.id ?? ""}
       onSelect={setSelectedId}
-      onLoopsChange={(loops) => patchProfile({ loops })}
+      onLoopsChange={(loops_count, loops_infinite) => patchProfile({ loops_count, loops_infinite, loops: loops_infinite ? 0 : loops_count })}
+      onStepsChange={patchSteps}
       onRunToggle={runToggle}
     />
   ) : (

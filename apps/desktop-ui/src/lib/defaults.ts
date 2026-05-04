@@ -40,7 +40,9 @@ export const defaultProfile: AutomationProfile = {
     double_click: false
   },
   steps: starterSteps,
-  loops: 0
+  loops: 1,
+  loops_count: 1,
+  loops_infinite: false
 };
 
 export const defaultSettings: AppSettings = {

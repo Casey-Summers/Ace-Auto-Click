@@ -52,9 +52,32 @@
           "randomness_ms": 0,
           "ms": 3000,
           "random_ms": 0
+        },
+        {
+          "id": "step-loop_start-1777871565933",
+          "type": "loop_start",
+          "enabled": true,
+          "repeats": 1,
+          "interval_ms": 100,
+          "randomness_ms": 0,
+          "loop_id": "loop-1777871565933",
+          "loop_count": 1,
+          "loop_infinite": false,
+          "collapsed": false
+        },
+        {
+          "id": "step-loop_end-1777871565933",
+          "type": "loop_end",
+          "enabled": true,
+          "repeats": 1,
+          "interval_ms": 100,
+          "randomness_ms": 0,
+          "loop_id": "loop-1777871565933"
         }
       ],
-      "loops": 0
+      "loops": 1,
+      "loops_count": 1,
+      "loops_infinite": false
     }
   ]
 }

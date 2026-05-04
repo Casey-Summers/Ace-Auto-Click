@@ -60,6 +60,10 @@ export type BaseStep = {
   interval_ms: number;
   randomness_ms: number;
 };
+export type LoopConfig = {
+  loops_count: number;
+  loops_infinite: boolean;
+};
 
 export type ClickStep = BaseStep & {
   type: "click";
@@ -90,7 +94,20 @@ export type KeyTapStep = BaseStep & {
   key: string;
 };
 
-export type ActionStep = ClickStep | WaitStep | PixelCheckStep | KeyTapStep;
+export type LoopStartStep = BaseStep & {
+  type: "loop_start";
+  loop_id: string;
+  loop_count: number;
+  loop_infinite: boolean;
+  collapsed: boolean;
+};
+
+export type LoopEndStep = BaseStep & {
+  type: "loop_end";
+  loop_id: string;
+};
+
+export type ActionStep = ClickStep | WaitStep | PixelCheckStep | KeyTapStep | LoopStartStep | LoopEndStep;
 
 export type AutomationProfile = {
   id: string;
@@ -99,6 +116,8 @@ export type AutomationProfile = {
   normal: NormalProfileSettings;
   steps: ActionStep[];
   loops: number;
+  loops_count: number;
+  loops_infinite: boolean;
 };
 
 export type PixelSample = {

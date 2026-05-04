@@ -68,8 +68,21 @@ class KeyTapStepModel(BaseStep):
     key: str = "space"
 
 
+class LoopStartStepModel(BaseStep):
+    type: Literal["loop_start"] = "loop_start"
+    loop_id: str
+    loop_count: Annotated[int, Field(ge=1, le=100_000)] = 1
+    loop_infinite: bool = False
+    collapsed: bool = False
+
+
+class LoopEndStepModel(BaseStep):
+    type: Literal["loop_end"] = "loop_end"
+    loop_id: str
+
+
 ActionStepModel = Annotated[
-    Union[ClickStepModel, WaitStepModel, PixelCheckStepModel, KeyTapStepModel],
+    Union[ClickStepModel, WaitStepModel, PixelCheckStepModel, KeyTapStepModel, LoopStartStepModel, LoopEndStepModel],
     Field(discriminator="type"),
 ]
 
@@ -81,6 +94,8 @@ class AutomationProfile(BaseModel):
     normal: NormalProfileSettings = Field(default_factory=NormalProfileSettings)
     steps: list[ActionStepModel] = Field(default_factory=list)
     loops: Annotated[int, Field(ge=0, le=100_000)] = 0
+    loops_count: Annotated[int, Field(ge=1, le=100_000)] = 1
+    loops_infinite: bool = False
 
 
 class ProfileExport(BaseModel):
@@ -118,6 +133,8 @@ class AppSettings(BaseModel):
 class SequenceRunRequest(BaseModel):
     steps: list[ActionStepModel]
     loops: Annotated[int, Field(ge=0, le=100_000)] = 0
+    loops_count: Annotated[int, Field(ge=1, le=100_000)] = 1
+    loops_infinite: bool = False
 
 
 class SimpleRunRequest(BaseModel):

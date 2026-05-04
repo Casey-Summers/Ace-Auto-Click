@@ -32,10 +32,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ settings })
     }),
-  runSequence: (steps: ActionStep[], loops = 0) =>
+  runSequence: (steps: ActionStep[], loopsCount = 1, loopsInfinite = false) =>
     request<{ state: RuntimeState }>("/run/sequence", {
       method: "POST",
-      body: JSON.stringify({ steps, loops })
+      body: JSON.stringify({ steps, loops_count: loopsCount, loops_infinite: loopsInfinite })
     }),
   runToggle: () => request<{ state: RuntimeState }>("/run/toggle", { method: "POST" }),
   stop: () => request<{ state: RuntimeState }>("/stop", { method: "POST" }),
