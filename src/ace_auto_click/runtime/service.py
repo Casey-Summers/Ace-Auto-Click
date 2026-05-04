@@ -68,6 +68,7 @@ def _terminate_process(process: subprocess.Popen[bytes]) -> None:
 
 def check_runtime() -> None:
     from ace_auto_click.api.app import _load_app_settings, create_app
+    from ace_auto_click.storage.profiles import ensure_profiles_dir
 
     failures: list[str] = []
     if sys.version_info < MIN_PYTHON:
@@ -87,6 +88,7 @@ def check_runtime() -> None:
 
     create_app()
     _load_app_settings()
+    ensure_profiles_dir()
 
     if failures:
         raise SystemExit(

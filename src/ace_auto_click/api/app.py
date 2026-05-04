@@ -15,6 +15,7 @@ from ace_auto_click.api.models import (
     KeyTapStepModel,
     PixelCheckStepModel,
     PixelSample,
+    ProfileDirectoryStatus,
     ProfileFile,
     ProductName,
     RuntimeState,
@@ -29,13 +30,15 @@ from ace_auto_click.automation.actions import (
     WaitStep,
 )
 from ace_auto_click.automation.engine import ClickEngine, ClickSettings
-from ace_auto_click.automation.hotkeys import EmergencyHotkeyManager
+from ace_auto_click.automation.hotkeys import RuntimeHotkeyManager
 from ace_auto_click.automation.pixels import PixelCondition, get_pixel_rgb
 from ace_auto_click.automation.recorder import ActionRecorder
 from ace_auto_click.storage.profiles import (
+    ensure_profiles_dir,
     list_profile_files,
     load_profile_export,
     open_profiles_folder,
+    profile_directory_status,
     save_profile_export,
 )
 from ace_auto_click.storage.settings import load_settings, save_settings
@@ -72,7 +75,53 @@ def _trigger_emergency_stop() -> RuntimeState:
     return _state()
 
 
-hotkeys = EmergencyHotkeyManager(on_trigger=_trigger_emergency_stop)
+def _sequence_for_run(settings: AppSettings) -> tuple[list[ActionStepModel], int]:
+    profile = next(
+        (
+            candidate
+            for candidate in settings.profiles
+            if candidate.id == settings.active_profile_id
+        ),
+        settings.profiles[0] if settings.profiles else None,
+    )
+    if profile is None:
+        return [], 0
+    if settings.mode == "advanced":
+        return profile.steps, profile.loops
+    normal = profile.normal
+    x, y = pyautogui.position() if normal.use_current_mouse else (0, 0)
+    return [
+        ClickStepModel(
+            id="normal-click",
+            interval_ms=normal.interval_ms,
+            randomness_ms=normal.interval_random_ms,
+            x=int(x),
+            y=int(y),
+            button=normal.button,
+            clicks=2 if normal.double_click else normal.clicks_per_cycle,
+            random_offset=normal.position_random_px,
+        )
+    ], profile.loops
+
+
+def _trigger_run_toggle() -> RuntimeState:
+    if engine.is_running():
+        engine.stop()
+        _set_status("Idle")
+        return _state()
+    settings = _load_app_settings()
+    steps, loops = _sequence_for_run(settings)
+    if not steps:
+        _set_status("Error: no active profile sequence")
+        return _state()
+    engine.start_sequence([_to_action_step(step) for step in steps], loops=loops)
+    return _state()
+
+
+hotkeys = RuntimeHotkeyManager(
+    on_emergency_stop=_trigger_emergency_stop,
+    on_run_toggle=_trigger_run_toggle,
+)
 
 
 def _state() -> RuntimeState:
@@ -156,20 +205,22 @@ def get_settings() -> AppSettings:
 @app.put("/settings", response_model=AppSettings)
 def put_settings(settings: AppSettings) -> AppSettings:
     save_settings(settings.model_dump())
-    _bind_emergency_hotkey(settings)
+    _bind_runtime_hotkeys(settings)
     return settings
 
 
-def _bind_emergency_hotkey(settings: AppSettings | None = None) -> None:
+def _bind_runtime_hotkeys(settings: AppSettings | None = None) -> None:
     try:
-        hotkeys.bind((settings or _load_app_settings()).emergency_stop_hotkey)
+        next_settings = settings or _load_app_settings()
+        hotkeys.bind(next_settings.emergency_stop_hotkey, next_settings.run_toggle_hotkey)
     except Exception as exc:
-        _set_status(f"Error: emergency hotkey unavailable ({exc})")
+        _set_status(f"Error: global hotkeys unavailable ({exc})")
 
 
 @app.on_event("startup")
 def startup() -> None:
-    _bind_emergency_hotkey()
+    ensure_profiles_dir()
+    _bind_runtime_hotkeys()
 
 
 @app.on_event("shutdown")
@@ -203,6 +254,11 @@ def run_sequence(request: SequenceRunRequest) -> CommandResult:
     return CommandResult(state=_state(), message="Sequence run started.")
 
 
+@app.post("/run/toggle", response_model=CommandResult)
+def run_toggle() -> CommandResult:
+    return CommandResult(state=_trigger_run_toggle(), message="Run toggle handled.")
+
+
 @app.post("/stop", response_model=CommandResult)
 def stop() -> CommandResult:
     engine.stop()
@@ -220,6 +276,11 @@ def profiles() -> list[ProfileFile]:
     return [ProfileFile.model_validate(item) for item in list_profile_files()]
 
 
+@app.get("/profiles/status", response_model=ProfileDirectoryStatus)
+def profiles_status() -> ProfileDirectoryStatus:
+    return ProfileDirectoryStatus.model_validate(profile_directory_status())
+
+
 @app.post("/profiles/save", response_model=ProfileFile)
 def save_profile(settings: AppSettings) -> ProfileFile:
     profile = next(
@@ -233,7 +294,7 @@ def save_profile(settings: AppSettings) -> ProfileFile:
     if profile is None:
         raise HTTPException(status_code=400, detail="Active profile was not found.")
     save_settings(settings.model_dump())
-    _bind_emergency_hotkey(settings)
+    _bind_runtime_hotkeys(settings)
     return ProfileFile.model_validate(save_profile_export(settings, profile))
 
 
@@ -262,7 +323,7 @@ def load_profile(file_name: str) -> AppSettings:
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     save_settings(settings.model_dump())
-    _bind_emergency_hotkey(settings)
+    _bind_runtime_hotkeys(settings)
     return settings
 
 

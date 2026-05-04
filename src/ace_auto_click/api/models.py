@@ -97,6 +97,12 @@ class ProfileFile(BaseModel):
     size: int
 
 
+class ProfileDirectoryStatus(BaseModel):
+    path: str
+    available: bool = True
+    file_count: int = 0
+
+
 class AppSettings(BaseModel):
     hotkey: str = "F8"
     run_toggle_hotkey: str = "F8"

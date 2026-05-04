@@ -12,6 +12,7 @@ type Props = {
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  density?: "default" | "compact";
 };
 
 export function CollapsibleSection({
@@ -20,13 +21,14 @@ export function CollapsibleSection({
   defaultOpen = true,
   actions,
   children,
-  className
+  className,
+  density = "default"
 }: Props) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
     <section className={cn("rounded-xl border border-border bg-surface/75 shadow-raycast", className)}>
-      <div className="flex min-h-11 items-center justify-between gap-2 px-3 py-2">
+      <div className={cn("flex items-center justify-between gap-2 px-3", density === "compact" ? "min-h-9 py-1.5" : "min-h-11 py-2")}>
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-semibold text-foreground"
@@ -38,7 +40,7 @@ export function CollapsibleSection({
         </button>
         <div className="flex items-center gap-2">{actions}</div>
       </div>
-      {open ? <div className="px-3 pb-3">{children}</div> : null}
+      {open ? <div className={cn("px-3", density === "compact" ? "pb-2" : "pb-3")}>{children}</div> : null}
     </section>
   );
 }

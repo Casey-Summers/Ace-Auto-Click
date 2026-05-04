@@ -12,6 +12,7 @@ const apiMock = vi.hoisted(() => ({
   emergencyStop: vi.fn(),
   saveSettings: vi.fn(),
   listProfiles: vi.fn(),
+  profileStatus: vi.fn(),
   saveProfile: vi.fn(),
   loadProfile: vi.fn(),
   openProfilesFolder: vi.fn(),
@@ -36,6 +37,7 @@ describe("App", () => {
     apiMock.emergencyStop.mockResolvedValue({ state: { product_name: "Ace Auto Click", running: false, recording: false, status: "Emergency stop", last_error: null } });
     apiMock.saveSettings.mockImplementation(async (settings) => settings);
     apiMock.listProfiles.mockResolvedValue([]);
+    apiMock.profileStatus.mockResolvedValue({ path: "profiles", available: true, file_count: 0 });
     apiMock.saveProfile.mockResolvedValue({ file_name: "Default-Profile.aceprofile.json", profile_name: "Default Profile", modified_at: "2026-05-04T00:00:00Z", size: 100 });
     apiMock.loadProfile.mockResolvedValue(defaultSettings);
     apiMock.openProfilesFolder.mockResolvedValue({ message: "Profiles folder opened." });
@@ -49,7 +51,7 @@ describe("App", () => {
     expect(screen.getByText("normal")).toBeInTheDocument();
     expect(screen.getByText("advanced")).toBeInTheDocument();
     expect(screen.getByText("Action Library")).toBeInTheDocument();
-    expect(screen.getByText("Profile Manager")).toBeInTheDocument();
+    expect(screen.getByLabelText("Profile name")).toBeInTheDocument();
     expect(screen.queryByText("Runtime")).not.toBeInTheDocument();
     expect(screen.getByText("Emergency stop")).toBeInTheDocument();
     expect(screen.queryByText(/palette/i)).not.toBeInTheDocument();
@@ -65,7 +67,7 @@ describe("App", () => {
     fireEvent.click(screen.getByLabelText("Edit emergency stop hotkey"));
 
     expect(await screen.findByRole("heading", { name: "Keybinds" })).toBeInTheDocument();
-    expect(screen.getByText("Runtime / Safety")).toBeInTheDocument();
+    expect(screen.queryByText("Runtime / Safety")).not.toBeInTheDocument();
     expect(screen.getAllByText("Click to change").length).toBeGreaterThan(0);
   });
 
@@ -99,7 +101,7 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
-    fireEvent.click(await screen.findByText("Keybinds"));
+    fireEvent.click(await screen.findByRole("button", { name: "Keybinds" }));
     fireEvent.click(screen.getAllByText("Click to change")[0]);
     expect(screen.getByText("Press a key...")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "F9" });
@@ -109,10 +111,22 @@ describe("App", () => {
   it("saves the active profile through the Profile Manager", async () => {
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Save Profile/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Save$/i }));
+    expect(await screen.findByRole("dialog", { name: "Save profile" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Confirm Save/i }));
 
     await waitFor(() => expect(apiMock.saveProfile).toHaveBeenCalled());
     expect(apiMock.listProfiles).toHaveBeenCalled();
+  });
+
+  it("keeps settings and runtime usable when profile endpoints are unavailable", async () => {
+    apiMock.listProfiles.mockRejectedValue(new Error('{"detail":"Not Found"}'));
+    apiMock.profileStatus.mockRejectedValue(new Error('{"detail":"Not Found"}'));
+
+    render(<App />);
+
+    expect(await screen.findByText(/Connected to Ace Auto Click/)).toBeInTheDocument();
+    expect(await screen.findByText("Profile API unavailable. Restart the app backend.")).toBeInTheDocument();
   });
 
   it("collapses and expands sections", () => {

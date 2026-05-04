@@ -37,24 +37,31 @@ def hotkey_to_pynput(value: str) -> str:
     return "+".join(normalized)
 
 
-class EmergencyHotkeyManager:
-    def __init__(self, on_trigger: Callable[[], None]) -> None:
-        self._on_trigger = on_trigger
+class RuntimeHotkeyManager:
+    def __init__(self, on_emergency_stop: Callable[[], None], on_run_toggle: Callable[[], None]) -> None:
+        self._on_emergency_stop = on_emergency_stop
+        self._on_run_toggle = on_run_toggle
         self._listener: keyboard.GlobalHotKeys | None = None
-        self._hotkey = ""
+        self._bindings: dict[str, str] = {}
 
-    def bind(self, hotkey: str) -> None:
-        next_hotkey = hotkey.strip()
-        if next_hotkey == self._hotkey and self._listener is not None:
+    def bind(self, emergency_stop_hotkey: str, run_toggle_hotkey: str) -> None:
+        emergency_binding = hotkey_to_pynput(emergency_stop_hotkey.strip())
+        run_binding = hotkey_to_pynput(run_toggle_hotkey.strip())
+        next_bindings = {emergency_binding: "emergency"}
+        if run_binding != emergency_binding:
+            next_bindings[run_binding] = "run_toggle"
+        if next_bindings == self._bindings and self._listener is not None:
             return
         self.stop()
-        binding = hotkey_to_pynput(next_hotkey)
-        self._listener = keyboard.GlobalHotKeys({binding: self._on_trigger})
+        callbacks = {}
+        for binding, action in next_bindings.items():
+            callbacks[binding] = self._on_emergency_stop if action == "emergency" else self._on_run_toggle
+        self._listener = keyboard.GlobalHotKeys(callbacks)
         self._listener.start()
-        self._hotkey = next_hotkey
+        self._bindings = next_bindings
 
     def stop(self) -> None:
         if self._listener is not None:
             self._listener.stop()
             self._listener = None
-        self._hotkey = ""
+        self._bindings = {}

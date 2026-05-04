@@ -31,6 +31,17 @@ def test_profile_export_round_trip_preserves_sequence(tmp_path, monkeypatch) -> 
     assert loaded.app_settings["emergency_stop_hotkey"] == "F12"
 
 
+def test_profile_directory_status_initializes_empty_directory(tmp_path, monkeypatch) -> None:
+    target = tmp_path / "profiles"
+    monkeypatch.setattr(profiles, "PROFILES_DIR", target)
+
+    status = profiles.profile_directory_status()
+
+    assert target.exists()
+    assert status["available"] is True
+    assert status["file_count"] == 0
+
+
 def test_hotkey_to_pynput_normalizes_common_keys() -> None:
     assert hotkey_to_pynput("F12") == "<f12>"
     assert hotkey_to_pynput("Ctrl+Alt+F8") == "<ctrl>+<alt>+<f8>"

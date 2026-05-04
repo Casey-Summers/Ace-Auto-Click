@@ -13,6 +13,12 @@ export type ProfileFile = {
   size: number;
 };
 
+export type ProfileDirectoryStatus = {
+  path: string;
+  available: boolean;
+  file_count: number;
+};
+
 export type SimpleSettings = {
   action_type: "mouse" | "keyboard";
   action_value: string;

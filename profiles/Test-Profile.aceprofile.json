@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "exported_by": "Ace Auto Click",
+  "profile": {
+    "id": "default-profile",
+    "name": "Test Profile",
+    "mode": "advanced",
+    "normal": {
+      "use_current_mouse": true,
+      "button": "left",
+      "interval_ms": 100,
+      "interval_random_ms": 0,
+      "position_random_px": 0,
+      "clicks_per_cycle": 1,
+      "double_click": false
+    },
+    "steps": [
+      {
+        "id": "step-click-1",
+        "type": "click",
+        "enabled": true,
+        "repeats": 1,
+        "interval_ms": 100,
+        "randomness_ms": 0,
+        "x": 1020,
+        "y": 820,
+        "button": "left",
+        "clicks": 1,
+        "random_offset": 0
+      },
+      {
+        "id": "step-wait-1",
+        "type": "wait",
+        "enabled": true,
+        "repeats": 1,
+        "interval_ms": 0,
+        "randomness_ms": 0,
+        "ms": 3000,
+        "random_ms": 0
+      }
+    ],
+    "loops": 0
+  },
+  "app_settings": {
+    "mode": "advanced",
+    "run_toggle_hotkey": "`",
+    "emergency_stop_hotkey": "F12",
+    "show_event_log": true,
+    "theme": "dark"
+  }
+}

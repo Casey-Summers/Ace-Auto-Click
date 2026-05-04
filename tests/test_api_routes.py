@@ -30,3 +30,10 @@ def test_emergency_stop_route_is_available() -> None:
     assert response.status_code == 200
     assert response.json()["state"]["status"] == "Emergency stop"
 
+
+def test_profiles_status_route_initializes_directory() -> None:
+    response = client.get("/profiles/status")
+
+    assert response.status_code == 200
+    assert response.json()["available"] is True
+    assert response.json()["path"]

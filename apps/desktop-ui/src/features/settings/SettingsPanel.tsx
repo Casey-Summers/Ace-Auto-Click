@@ -1,21 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Keyboard, ScrollText, Settings, Shield, UserRound, X } from "lucide-react";
+import { Keyboard, ScrollText, Settings, UserRound } from "lucide-react";
 
 import { KeybindField } from "../../components/KeybindField";
+import { ModalFrame } from "../../components/ModalFrame";
 import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
 import { Input, Select } from "../../components/ui/input";
 import { cn } from "../../lib/utils";
 import type { AppSettings, AutomationProfile } from "../../lib/types";
 
-type Category = "general" | "profiles" | "keybinds" | "safety" | "logs";
+type Category = "general" | "profiles" | "keybinds" | "logs";
 
-const categories: Array<{ id: Category; label: string; icon: ReactNode }> = [
-  { id: "general", label: "General", icon: <Settings size={16} /> },
-  { id: "profiles", label: "Profiles", icon: <UserRound size={16} /> },
-  { id: "keybinds", label: "Keybinds", icon: <Keyboard size={16} /> },
-  { id: "safety", label: "Runtime / Safety", icon: <Shield size={16} /> },
-  { id: "logs", label: "Logs", icon: <ScrollText size={16} /> }
+const categories: Array<{ id: Category; label: string; description: string; icon: ReactNode }> = [
+  { id: "general", label: "General", description: "Choose the app-wide defaults that shape the workspace when profiles are opened.", icon: <Settings size={16} /> },
+  { id: "profiles", label: "Profiles", description: "Manage imported profiles and the active profile used by the main workspace.", icon: <UserRound size={16} /> },
+  { id: "keybinds", label: "Keybinds", description: "Capture shortcuts for starting automation and stopping it quickly.", icon: <Keyboard size={16} /> },
+  { id: "logs", label: "Logs", description: "Control diagnostic visibility without changing automation behavior.", icon: <ScrollText size={16} /> }
 ];
 
 function SettingRow({
@@ -56,10 +55,10 @@ export function SettingsModal({
   onClose: () => void;
 }) {
   const [category, setCategory] = useState<Category>(focusEmergency ? "keybinds" : "general");
-  const panelRef = useRef<HTMLDivElement>(null);
   const firstButtonRef = useRef<HTMLButtonElement>(null);
   const reservedRun = useMemo(() => [settings.emergency_stop_hotkey], [settings.emergency_stop_hotkey]);
   const reservedEmergency = useMemo(() => [settings.run_toggle_hotkey], [settings.run_toggle_hotkey]);
+  const activeCategory = categories.find((item) => item.id === category) ?? categories[0];
 
   useEffect(() => {
     firstButtonRef.current?.focus();
@@ -69,41 +68,14 @@ export function SettingsModal({
     if (focusEmergency) setCategory("keybinds");
   }, [focusEmergency]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-      if (event.key !== "Tab" || !panelRef.current) return;
-      const focusable = Array.from(
-        panelRef.current.querySelectorAll<HTMLElement>(
-          "button:not([disabled]), input:not([disabled]), select:not([disabled])"
-        )
-      );
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-background/75 p-6 backdrop-blur-sm">
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Settings"
-        className="grid h-[min(720px,calc(100vh-48px))] w-[min(980px,calc(100vw-48px))] grid-cols-[220px_1fr] overflow-hidden rounded-xl border border-border bg-surface shadow-raycast"
-      >
+    <ModalFrame
+      title="Settings"
+      description={activeCategory.description}
+      widthClass="w-[min(980px,calc(100vw-48px))]"
+      onClose={onClose}
+    >
+      <div className="grid h-[min(656px,calc(100vh-104px))] grid-cols-[220px_1fr]">
         <aside className="border-r border-border bg-background/45 p-3">
           <div className="mb-3 flex items-center justify-between">
             <div className="text-sm font-semibold">Settings</div>
@@ -129,16 +101,9 @@ export function SettingsModal({
         </aside>
 
         <section className="grid min-h-0 grid-rows-[auto_1fr]">
-          <header className="flex min-h-14 items-center justify-between border-b border-border px-5">
-            <div>
-              <h2 className="text-base font-semibold">{categories.find((item) => item.id === category)?.label}</h2>
-              <p className="text-xs text-muted-foreground">Predictable groups, clear current values, and immediate feedback for high-risk controls.</p>
-            </div>
-            <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close settings">
-              <X size={18} />
-            </Button>
+          <header className="border-b border-border px-5 py-3">
+            <h2 className="text-base font-semibold">{activeCategory.label}</h2>
           </header>
-
           <div className="min-h-0 overflow-auto p-5">
             {category === "general" ? (
               <div className="grid gap-3">
@@ -196,17 +161,6 @@ export function SettingsModal({
               </div>
             ) : null}
 
-            {category === "safety" ? (
-              <div className="grid gap-3">
-                <SettingRow label="Runtime state" description="Emergency stop stays visible in the header and is also bound by the backend.">
-                  <div className="flex items-center gap-2">
-                    <Badge tone={running ? "success" : "neutral"}>{running ? "running" : "idle"}</Badge>
-                    <Badge tone="danger">Emergency {settings.emergency_stop_hotkey}</Badge>
-                  </div>
-                </SettingRow>
-              </div>
-            ) : null}
-
             {category === "logs" ? (
               <div className="grid gap-3">
                 <SettingRow label="Show event log" description="Controls the left-column event log panel.">
@@ -224,6 +178,6 @@ export function SettingsModal({
           </div>
         </section>
       </div>
-    </div>
+    </ModalFrame>
   );
 }

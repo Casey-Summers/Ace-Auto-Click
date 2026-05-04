@@ -58,6 +58,15 @@ def list_profile_files() -> list[dict[str, Any]]:
     return files
 
 
+def profile_directory_status() -> dict[str, Any]:
+    directory = ensure_profiles_dir()
+    return {
+        "path": str(directory),
+        "available": directory.exists() and directory.is_dir(),
+        "file_count": len(list(directory.glob(f"*{PROFILE_SUFFIX}"))),
+    }
+
+
 def save_profile_export(settings: AppSettings, profile: AutomationProfile) -> dict[str, Any]:
     export = ProfileExport(
         profile=profile,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Settings, Zap } from "lucide-react";
 
 import { EmergencyStopButton } from "./components/EmergencyStopButton";
@@ -7,7 +7,7 @@ import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { ActionLibrary } from "./features/actions/ActionLibrary";
 import { EventLogPanel } from "./features/log/EventLogPanel";
-import { ProfileManager } from "./features/runtime/RuntimePanel";
+import { ProfileLoadDialog, ProfileManager, ProfileSaveDialog } from "./features/runtime/RuntimePanel";
 import { SettingsModal } from "./features/settings/SettingsPanel";
 import { NormalRunPanel } from "./features/sequence/NormalRunPanel";
 import { NormalDetailsPanel, StepDetailsPanel } from "./features/sequence/StepDetailsPanel";
@@ -50,6 +50,11 @@ export function App() {
   const [focusEmergency, setFocusEmergency] = useState(false);
   const [profileFiles, setProfileFiles] = useState<ProfileFile[]>([]);
   const [selectedProfileFile, setSelectedProfileFile] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [loadDialogOpen, setLoadDialogOpen] = useState(false);
+  const settingsHydrated = useRef(false);
   const [log, setLog] = useState<string[]>(["UI ready. Start the API with python app.py api."]);
 
   const activeProfile = useMemo(
@@ -60,20 +65,28 @@ export function App() {
     () => activeProfile.steps.find((step) => step.id === selectedId) ?? activeProfile.steps[0],
     [activeProfile.steps, selectedId]
   );
+  const profileNameError = useMemo(() => {
+    const name = activeProfile.name.trim();
+    if (!name) return "Profile name is required before saving.";
+    const duplicate = settings.profiles.some((profile) => profile.id !== activeProfile.id && profile.name.trim().toLowerCase() === name.toLowerCase());
+    return duplicate ? "Another imported profile already uses this name." : "";
+  }, [activeProfile.id, activeProfile.name, settings.profiles]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("light", settings.theme === "light");
   }, [settings.theme]);
 
   useEffect(() => {
-    Promise.all([api.getSettings(), api.getState(), api.listProfiles()])
-      .then(([nextSettings, nextState, nextProfileFiles]) => {
+    Promise.all([api.getSettings(), api.getState()])
+      .then(([nextSettings, nextState]) => {
         setSettings(normalizeSettings(nextSettings));
         setState(nextState);
-        setProfileFiles(nextProfileFiles);
+        settingsHydrated.current = true;
         setLog((items) => [`Connected to ${nextState.product_name}.`, ...items]);
       })
       .catch((error) => setLog((items) => [`API unavailable: ${error.message}`, ...items]));
+
+    refreshProfiles();
 
     const timer = window.setInterval(() => {
       api.getState().then(setState).catch(() => undefined);
@@ -81,6 +94,31 @@ export function App() {
 
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!settingsHydrated.current) return undefined;
+    const timer = window.setTimeout(() => {
+      api.saveSettings(settings).catch((error) => {
+        setProfileError("Background keybind sync failed. Restart the app backend.");
+        setLog((items) => [`Settings sync failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
+      });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [settings]);
+
+  const refreshProfiles = async () => {
+    try {
+      const [nextProfileFiles] = await Promise.all([api.listProfiles(), api.profileStatus()]);
+      setProfileFiles(nextProfileFiles);
+      setProfileError("");
+    } catch (error) {
+      const message = error instanceof Error && /404|Not Found/i.test(error.message)
+        ? "Profile API unavailable. Restart the app backend."
+        : "Profiles folder is not ready.";
+      setProfileError(message);
+      setLog((items) => [`Profile manager: ${error instanceof Error ? error.message : String(error)}`, ...items]);
+    }
+  };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -133,26 +171,56 @@ export function App() {
     patchSettings({ mode: "advanced" });
   };
 
-  const saveProfile = async () => {
-    const saved = await api.saveProfile(settings);
-    const nextProfileFiles = await api.listProfiles();
-    setProfileFiles(nextProfileFiles);
-    setSelectedProfileFile(saved.file_name);
-    setLog((items) => [`Saved profile ${saved.profile_name}.`, ...items]);
+  const requestSaveProfile = () => {
+    setProfileError("");
+    if (profileNameError) {
+      setProfileError(profileNameError);
+      return;
+    }
+    setSaveDialogOpen(true);
+  };
+
+  const confirmSaveProfile = async () => {
+    setProfileSaving(true);
+    setProfileError("");
+    try {
+      const saved = await api.saveProfile(settings);
+      await refreshProfiles();
+      setSelectedProfileFile(saved.file_name);
+      setSaveDialogOpen(false);
+      setLog((items) => [`Saved profile ${saved.profile_name}.`, ...items]);
+    } catch (error) {
+      const message = error instanceof Error && /404|Not Found/i.test(error.message)
+        ? "Profile API unavailable. Restart the app backend."
+        : error instanceof Error ? error.message : "Profile could not be saved.";
+      setProfileError(message);
+    } finally {
+      setProfileSaving(false);
+    }
   };
 
   const loadProfile = async () => {
     if (!selectedProfileFile) return;
-    const next = await api.loadProfile(selectedProfileFile);
-    setSettings(normalizeSettings(next));
-    const nextProfileFiles = await api.listProfiles();
-    setProfileFiles(nextProfileFiles);
-    setLog((items) => [`Loaded profile ${selectedProfileFile}.`, ...items]);
+    setProfileError("");
+    try {
+      const next = normalizeSettings(await api.loadProfile(selectedProfileFile));
+      setSettings(next);
+      await refreshProfiles();
+      setLoadDialogOpen(false);
+      setLog((items) => [`Loaded profile ${selectedProfileFile}.`, ...items]);
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : "Profile could not be loaded.");
+    }
   };
 
   const openProfilesFolder = async () => {
-    await api.openProfilesFolder();
-    setLog((items) => ["Opened profiles folder.", ...items]);
+    try {
+      await api.openProfilesFolder();
+      await refreshProfiles();
+      setLog((items) => ["Opened profiles folder.", ...items]);
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : "Profiles folder could not be opened.");
+    }
   };
 
   const emergencyStop = async () => {
@@ -251,13 +319,16 @@ export function App() {
 
   const centerTop = (
     <ProfileManager
-      state={state}
       activeProfile={activeProfile}
-      profileFiles={profileFiles}
-      selectedProfileFile={selectedProfileFile}
-      onSelectedProfileFileChange={setSelectedProfileFile}
-      onSaveProfile={saveProfile}
-      onLoadProfile={loadProfile}
+      saving={profileSaving}
+      error={profileError}
+      profileNameError={profileNameError}
+      onProfileNameChange={(name) => patchProfile({ name })}
+      onSaveProfile={requestSaveProfile}
+      onOpenLoadProfiles={() => {
+        setProfileError("");
+        setLoadDialogOpen(true);
+      }}
       onOpenProfilesFolder={openProfilesFolder}
     />
   );
@@ -308,6 +379,26 @@ export function App() {
             setSettingsOpen(false);
             setFocusEmergency(false);
           }}
+        />
+      ) : null}
+      {saveDialogOpen ? (
+        <ProfileSaveDialog
+          profile={activeProfile}
+          mode={settings.mode}
+          saving={profileSaving}
+          error={profileError}
+          onCancel={() => setSaveDialogOpen(false)}
+          onConfirm={confirmSaveProfile}
+        />
+      ) : null}
+      {loadDialogOpen ? (
+        <ProfileLoadDialog
+          profiles={profileFiles}
+          selectedProfileFile={selectedProfileFile}
+          error={profileError}
+          onSelect={setSelectedProfileFile}
+          onLoad={loadProfile}
+          onClose={() => setLoadDialogOpen(false)}
         />
       ) : null}
     </>
