@@ -17,6 +17,7 @@ from ace_auto_click.api.models import (
     WaitStepModel,
 )
 from ace_auto_click.automation.actions import ClickStep, KeyTapStep, PixelCheckStep, WaitStep
+from ace_auto_click.automation.engine import SequenceTimelineNode
 
 
 def sequence_for_run(settings: AppSettings) -> tuple[list[ActionStepModel], int]:
@@ -85,6 +86,48 @@ def expand_loop_markers(steps: list[ActionStepModel]) -> list[ActionStepModel]:
         output.append(step)
         index += 1
     return output
+
+
+def compile_sequence_timeline(steps: list[ActionStepModel]) -> list[SequenceTimelineNode]:
+    timeline: list[SequenceTimelineNode] = []
+
+    def append_range(items: list[ActionStepModel]) -> None:
+        index = 0
+        while index < len(items):
+            step = items[index]
+            if isinstance(step, LoopStartStepModel):
+                depth = 1
+                end_index = index + 1
+                while end_index < len(items) and depth > 0:
+                    probe = items[end_index]
+                    if isinstance(probe, LoopStartStepModel) and probe.loop_id == step.loop_id:
+                        depth += 1
+                    elif isinstance(probe, LoopEndStepModel) and probe.loop_id == step.loop_id:
+                        depth -= 1
+                    end_index += 1
+                if depth != 0:
+                    raise HTTPException(status_code=400, detail=f"Unmatched loop_start for {step.loop_id}")
+                if not step.enabled:
+                    index = end_index
+                    continue
+                body = items[index + 1 : end_index - 1]
+                end_step = items[end_index - 1]
+                iterations = 1000 if step.loop_infinite else max(1, step.loop_count)
+                for iteration in range(iterations):
+                    timeline.append(SequenceTimelineNode(step.id, step.type, "loop_enter"))
+                    append_range(body)
+                    if isinstance(end_step, LoopEndStepModel) and end_step.enabled:
+                        timeline.append(SequenceTimelineNode(end_step.id, end_step.type, "loop_repeat" if iteration < iterations - 1 else "loop_exit"))
+                index = end_index
+                continue
+            if isinstance(step, LoopEndStepModel):
+                raise HTTPException(status_code=400, detail=f"Unmatched loop_end for {step.loop_id}")
+            if step.enabled:
+                timeline.append(SequenceTimelineNode(step.id, step.type, "execute", to_action_step(step)))
+            index += 1
+
+    append_range(steps)
+    return timeline
 
 
 def to_action_step(step: ActionStepModel) -> ClickStep | WaitStep | PixelCheckStep | KeyTapStep:

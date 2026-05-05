@@ -160,7 +160,8 @@ class RuntimeState(BaseModel):
 class ExecutionEvent(BaseModel):
     step_id: str
     step_type: str
-    phase: Literal["step_start", "loop_enter", "loop_end", "loop_repeat"]
+    phase: Literal["step_execute", "step_wait", "loop_enter", "loop_exit", "loop_repeat", "condition_waiting", "condition_met"]
+    run_id: int
     sequence_no: int
     ts_ms: int
 

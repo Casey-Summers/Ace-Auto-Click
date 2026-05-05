@@ -24,9 +24,12 @@ class ActionStep:
         if not self.enabled:
             return True
 
-        for _ in range(max(1, self.repeats)):
+        for repeat_index in range(max(1, self.repeats)):
             if engine._stop_evt.is_set():
                 return False
+
+            if repeat_index > 0 and hasattr(engine, "emit_execution_event"):
+                engine.emit_execution_event(self.id, self.type, "step_wait")
 
             if not self._run(engine):
                 return False
@@ -108,18 +111,26 @@ class PixelCheckStep(ActionStep):
     def _run(self, engine: Any) -> bool:
         if self.mode == "wait_until_match":
             engine.current_step_state = "waiting"
+            waiting_emitted = False
             while not engine._stop_evt.is_set():
                 current = get_pixel_rgb(self.x, self.y)
                 if rgb_close(current, self.expected_rgb, self.tolerance):
                     engine.current_step_state = "running"
+                    if hasattr(engine, "emit_execution_event"):
+                        engine.emit_execution_event(self.id, self.type, "condition_met")
                     return True
                 engine.current_step_state = "condition_false"
+                if not waiting_emitted and hasattr(engine, "emit_execution_event"):
+                    engine.emit_execution_event(self.id, self.type, "condition_waiting")
+                    waiting_emitted = True
                 time.sleep(0.1)
             return False
 
         current = get_pixel_rgb(self.x, self.y)
         is_match = rgb_close(current, self.expected_rgb, self.tolerance)
         engine.current_step_state = "running" if is_match else "condition_false"
+        if hasattr(engine, "emit_execution_event"):
+            engine.emit_execution_event(self.id, self.type, "condition_met" if is_match else "condition_waiting")
 
         if self.mode == "stop_if_mismatch" and not is_match:
             return False

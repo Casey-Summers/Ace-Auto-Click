@@ -11,7 +11,8 @@ export type RuntimeState = {
 export type ExecutionEvent = {
   step_id: string;
   step_type: string;
-  phase: "step_start" | "loop_enter" | "loop_end" | "loop_repeat";
+  phase: "step_execute" | "step_wait" | "loop_enter" | "loop_exit" | "loop_repeat" | "condition_waiting" | "condition_met";
+  run_id: number;
   sequence_no: number;
   ts_ms: number;
 };

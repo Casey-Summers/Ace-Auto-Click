@@ -18,7 +18,7 @@ from ace_auto_click.api.models import (
     SimpleRunRequest,
 )
 from ace_auto_click.api.runtime_state import engine, hotkeys, recorder, set_status, state, trigger_emergency_stop
-from ace_auto_click.api.sequence_service import active_profile, expand_loop_markers, sequence_for_run, to_action_step
+from ace_auto_click.api.sequence_service import active_profile, compile_sequence_timeline, sequence_for_run
 from ace_auto_click.api.settings_service import load_app_settings, save_app_settings
 from ace_auto_click.automation.engine import ClickSettings
 from ace_auto_click.automation import input_capture
@@ -53,8 +53,7 @@ def trigger_run_toggle() -> RuntimeState:
     if not steps:
         set_status("Error: no active profile sequence")
         return state()
-    compiled = expand_loop_markers(steps)
-    engine.start_sequence([to_action_step(step) for step in compiled], loops=loops)
+    engine.start_sequence_timeline(compile_sequence_timeline(steps), loops=loops)
     return state()
 
 
@@ -109,10 +108,8 @@ def run_simple(request: SimpleRunRequest) -> CommandResult:
 def run_sequence(request: SequenceRunRequest) -> CommandResult:
     if not request.steps:
         raise HTTPException(status_code=400, detail="Sequence must include at least one step.")
-    compiled = expand_loop_markers(request.steps)
-    steps = [to_action_step(step) for step in compiled]
     loops = 0 if request.loops_infinite else max(1, request.loops_count)
-    engine.start_sequence(steps, loops=loops)
+    engine.start_sequence_timeline(compile_sequence_timeline(request.steps), loops=loops)
     return CommandResult(state=state(), message="Sequence run started.")
 
 

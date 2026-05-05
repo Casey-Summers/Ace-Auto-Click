@@ -144,12 +144,12 @@ function moveBlock(steps: ActionStep[], fromIndex: number, toIndex: number, rang
   return next;
 }
 
-function SortableRow({ row, step, selected, stateTone, recentTone, selectedPixelLiveRgb, pixelSamplingAssist, onSelect, onToggleCollapse }: { row: RowItem; step: ActionStep; selected: boolean; stateTone?: "info" | "success" | "warning" | "danger"; recentTone?: "success" | "warning" | "danger" | null; selectedPixelLiveRgb?: Rgb | null; pixelSamplingAssist?: boolean; onSelect: () => void; onToggleCollapse: (step: LoopStartStep) => void; }) {
+function SortableRow({ row, step, selected, stateTone, flashTone, heldTone, selectedPixelLiveRgb, pixelSamplingAssist, onSelect, onToggleCollapse }: { row: RowItem; step: ActionStep; selected: boolean; stateTone?: "info" | "success" | "warning" | "danger"; flashTone?: "success" | "warning" | null; heldTone?: "danger" | null; selectedPixelLiveRgb?: Rgb | null; pixelSamplingAssist?: boolean; onSelect: () => void; onToggleCollapse: (step: LoopStartStep) => void; }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id });
   const summary = row.collapsedSummary ?? rowSummary(step, selectedPixelLiveRgb, selected);
   return (
     <div ref={setNodeRef} data-step-id={step.id} style={{ transform: CSS.Transform.toString(transform), transition, marginLeft: `${row.indentPct}%`, width: `calc(100% - ${row.indentPct}%)` }} className={isDragging ? "opacity-60" : ""}>
-      <div className={`relative flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${selected ? (stateTone === "success" ? "border-success/55 bg-success/10" : stateTone === "warning" ? "border-warning/55 bg-warning/10" : stateTone === "danger" ? "border-danger/55 bg-danger/10" : "border-info/45 bg-info/10") : "border-border bg-background/60 hover:bg-surface-strong"} ${step.enabled ? "" : "opacity-45"} ${pixelSamplingAssist ? "border-warning/75 bg-warning/10 shadow-[0_0_0_1px_hsl(var(--warning)/0.5)]" : ""} ${recentTone === "success" && !selected ? "step-fade-success" : ""} ${recentTone === "warning" && !selected ? "step-fade-warning" : ""} ${recentTone === "danger" && !selected ? "step-fade-danger" : ""}`} onClick={onSelect}>
+      <div className={`relative flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${heldTone === "danger" ? "border-danger/60 bg-danger/10" : selected ? (stateTone === "success" ? "border-success/55 bg-success/10" : stateTone === "warning" ? "border-warning/55 bg-warning/10" : stateTone === "danger" ? "border-danger/55 bg-danger/10" : "border-info/45 bg-info/10") : "border-border bg-background/60 hover:bg-surface-strong"} ${step.enabled ? "" : "opacity-45"} ${pixelSamplingAssist ? "border-warning/75 bg-warning/10 shadow-[0_0_0_1px_hsl(var(--warning)/0.5)]" : ""} ${flashTone === "success" && !heldTone ? "step-fade-success" : ""} ${flashTone === "warning" && !heldTone ? "step-fade-warning" : ""}`} onClick={onSelect}>
         <div className="flex min-w-0 items-center gap-3">
           <button type="button" className="rounded p-1 text-muted-foreground hover:bg-background/50 hover:text-foreground" title="Drag step" {...attributes} {...listeners}><GripVertical size={14} /></button>
           {step.type === "loop_start"
@@ -171,7 +171,8 @@ function SortableRow({ row, step, selected, stateTone, recentTone, selectedPixel
 
 export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, runHotkey, selectedId, selectedPixelLiveRgb, samplingPixelStepId, executingStepId, executingStepState, executionEvents, onSelect, onLoopsChange, onRunToggle, onStepsChange, onSamplePixelFromClickStep, onRunHotkeyClick }: { steps: ActionStep[]; loops: number; loopsCount: number; loopsInfinite: boolean; running: boolean; runHotkey: string; selectedId: string; selectedPixelLiveRgb?: Rgb | null; samplingPixelStepId?: string; executingStepId?: string | null; executingStepState?: "running" | "waiting" | "condition_false" | null; executionEvents?: ExecutionEvent[]; onSelect: (id: string) => void; onLoopsChange: (count: number, infinite: boolean) => void; onRunToggle: () => void; onStepsChange: (steps: ActionStep[]) => void; onSamplePixelFromClickStep?: (clickStepId: string) => void; onRunHotkeyClick: () => void; }) {
   const [loopDraft, setLoopDraft] = useState(String(loopsCount));
-  const [recentRun, setRecentRun] = useState<Record<string, "success" | "warning" | "danger">>({});
+  const [flashByStepId, setFlashByStepId] = useState<Record<string, "success" | "warning">>({});
+  const [heldStateByStepId, setHeldStateByStepId] = useState<Record<string, "danger">>({});
   const [rowGeometry, setRowGeometry] = useState<Map<string, RowGeometry>>(new Map());
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const ranges = useMemo(() => resolveLoops(steps), [steps]);
@@ -179,6 +180,8 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
   const rowIds = rows.map((row) => steps[row.index].id);
   const listRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const flashTimersRef = useRef<Record<string, number>>({});
+  const visualRunIdRef = useRef<number | null>(null);
 
   const scheduleMeasure = () => {
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
@@ -241,22 +244,64 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
   }, [running, executingStepId]);
 
   useEffect(() => {
+    if (running) {
+      setFlashByStepId({});
+      setHeldStateByStepId({});
+      Object.values(flashTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+      flashTimersRef.current = {};
+      return;
+    }
+    setFlashByStepId({});
+    setHeldStateByStepId({});
+    visualRunIdRef.current = null;
+    Object.values(flashTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+    flashTimersRef.current = {};
+  }, [running]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(flashTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+    };
+  }, []);
+
+  useEffect(() => {
     if (!executionEvents?.length) return;
-    const timers: number[] = [];
-    for (const event of executionEvents.slice(-20)) {
-      const tone = event.phase === "loop_repeat" ? "warning" : "success";
-      setRecentRun((current) => ({ ...current, [event.step_id]: tone }));
-      const timer = window.setTimeout(() => {
-        setRecentRun((current) => {
+    const lastEvent = executionEvents[executionEvents.length - 1];
+    if (visualRunIdRef.current !== lastEvent.run_id) {
+      visualRunIdRef.current = lastEvent.run_id;
+      setFlashByStepId({});
+      setHeldStateByStepId({});
+      Object.values(flashTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+      flashTimersRef.current = {};
+    }
+    const eventRow = listRef.current?.querySelector(`[data-step-id="${lastEvent.step_id}"]`) as HTMLElement | null;
+    eventRow?.scrollIntoView({ block: "start", behavior: "smooth" });
+    for (const event of executionEvents.filter((item) => item.run_id === visualRunIdRef.current)) {
+      if (event.phase === "condition_waiting") {
+        if (!running) continue;
+        setHeldStateByStepId((current) => ({ ...current, [event.step_id]: "danger" }));
+        continue;
+      }
+      if (event.phase === "condition_met") {
+        setHeldStateByStepId((current) => {
           const next = { ...current };
           delete next[event.step_id];
           return next;
         });
+      }
+      const tone = event.phase === "step_wait" || event.phase === "loop_repeat" ? "warning" : "success";
+      setFlashByStepId((current) => ({ ...current, [event.step_id]: tone }));
+      if (flashTimersRef.current[event.step_id]) window.clearTimeout(flashTimersRef.current[event.step_id]);
+      flashTimersRef.current[event.step_id] = window.setTimeout(() => {
+        setFlashByStepId((current) => {
+          const next = { ...current };
+          delete next[event.step_id];
+          return next;
+        });
+        delete flashTimersRef.current[event.step_id];
       }, 1800);
-      timers.push(timer);
     }
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [executionEvents]);
+  }, [executionEvents, running]);
 
   const onDragEnd = (event: DragEndEvent) => {
     if (!event.over || event.active.id === event.over.id) return;
@@ -283,7 +328,7 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
                 const pixelSamplingAssist = Boolean(samplingPixelStepId) && step.type === "click";
                 const executing = executingStepId === step.id;
                 const stateTone = !executing ? "info" : executingStepState === "condition_false" ? "danger" : executingStepState === "waiting" ? "warning" : "success";
-                return <SortableRow key={step.id} row={row} step={step} selected={executing || step.id === selectedId} stateTone={stateTone} recentTone={recentRun[step.id] ?? null} selectedPixelLiveRgb={selectedPixelLiveRgb} pixelSamplingAssist={pixelSamplingAssist} onSelect={() => { if (pixelSamplingAssist && onSamplePixelFromClickStep) { void onSamplePixelFromClickStep(step.id); return; } onSelect(step.id); }} onToggleCollapse={toggleCollapse} />;
+                return <SortableRow key={step.id} row={row} step={step} selected={executing || step.id === selectedId} stateTone={stateTone} flashTone={flashByStepId[step.id] ?? null} heldTone={heldStateByStepId[step.id] ?? null} selectedPixelLiveRgb={selectedPixelLiveRgb} pixelSamplingAssist={pixelSamplingAssist} onSelect={() => { if (pixelSamplingAssist && onSamplePixelFromClickStep) { void onSamplePixelFromClickStep(step.id); return; } onSelect(step.id); }} onToggleCollapse={toggleCollapse} />;
               })}
             </div>
           </div>

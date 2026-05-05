@@ -94,7 +94,7 @@ export function useAppController() {
       api.executionEvents(executionAfter.current).then((events) => {
         if (!events.length) return;
         executionAfter.current = Math.max(executionAfter.current, ...events.map((event) => event.sequence_no));
-        setExecutionEvents((current) => [...current, ...events].slice(-120));
+        setExecutionEvents(events);
       }).catch(() => undefined);
     }, intervalMs);
     return () => window.clearInterval(timer);
@@ -463,7 +463,7 @@ export function useAppController() {
 
   const samplePixelFromClickStep = async (clickStepId: string) => {
     if (!samplingPixelStepId) return;
-    const clickStep = activeProfile.steps.find((step) => step.id === clickStepId && step.type === "click");
+    const clickStep = activeProfile.steps.find((step): step is Extract<ActionStep, { type: "click" }> => step.id === clickStepId && step.type === "click");
     if (!clickStep) return;
     try {
       const sample = await api.pixel(clickStep.x, clickStep.y);
