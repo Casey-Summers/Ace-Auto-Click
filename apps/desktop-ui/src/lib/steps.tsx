@@ -14,7 +14,7 @@ export function stepIcon(type: ActionStep["type"]) {
 export function stepTitle(step: ActionStep) {
   if (step.type === "click") return `Click ${step.button} at ${step.x}, ${step.y}`;
   if (step.type === "wait") return `Wait ${step.ms}ms`;
-  if (step.type === "pixel_check") return `Pixel ${step.x}, ${step.y}`;
+  if (step.type === "pixel_check") return `Pixel Match ${step.x}, ${step.y}`;
   if (step.type === "loop_start") return step.loop_infinite ? "Loop start (infinite)" : `Loop start (${step.loop_count}x)`;
   if (step.type === "loop_end") return "Loop end";
   return `Tap ${step.key}`;

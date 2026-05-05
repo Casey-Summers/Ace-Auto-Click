@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { CollapsibleSection } from "../../components/CollapsibleSection";
 import { Button } from "../../components/ui/button";
 import { Input, Select } from "../../components/ui/input";
-import type { ActionStep, NormalProfileSettings, Point } from "../../lib/types";
+import type { ActionStep, NormalProfileSettings, Point, Rgb } from "../../lib/types";
 
 function FieldRow({ title, info, children }: { title: string; info: string; children: ReactNode }) {
   return (
@@ -68,6 +68,32 @@ function CursorPreview({ cursor, target }: { cursor: Point | null; target: Point
   );
 }
 
+function PixelMatchPreview({ live, expected, tolerance }: { live: Rgb | null; expected: Rgb; tolerance: number }) {
+  const withinTolerance = live ? Math.max(...live.map((value, index) => Math.abs(value - expected[index]))) <= tolerance : false;
+  return (
+    <div className="grid gap-3">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+        <div className="rounded-md bg-background/70 p-2">
+          <div className="text-xs text-muted-foreground">Current</div>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="h-4 w-4 rounded border border-border" style={{ backgroundColor: live ? `rgb(${live.join(",")})` : "transparent" }} />
+            <span className="font-mono text-xs">{live ? live.join(", ") : "n/a"}</span>
+          </div>
+        </div>
+        <div className="font-mono text-lg">{withinTolerance ? "=" : "!="}</div>
+        <div className="rounded-md bg-background/70 p-2">
+          <div className="text-xs text-muted-foreground">Expected</div>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="h-4 w-4 rounded border border-border" style={{ backgroundColor: `rgb(${expected.join(",")})` }} />
+            <span className="font-mono text-xs">{expected.join(", ")}</span>
+          </div>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">Tolerance: {tolerance}</p>
+    </div>
+  );
+}
+
 export function NormalDetailsPanel({ normal, onChange }: { normal: NormalProfileSettings; onChange: (patch: Partial<NormalProfileSettings>) => void; }) {
   return (
     <CollapsibleSection title="Normal Profile">
@@ -90,7 +116,7 @@ export function NormalDetailsPanel({ normal, onChange }: { normal: NormalProfile
   );
 }
 
-export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPosition, onChange, onSamplePixel, onPickClickPosition }: { step?: ActionStep; pickCursorPosition?: Point | null; pickingClickPosition?: boolean; onChange: (patch: Partial<ActionStep>) => void; onSamplePixel: () => void; onPickClickPosition: () => void; }) {
+export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPosition, pixelLiveRgb, samplingPixel, onChange, onSamplePixel, onPickClickPosition }: { step?: ActionStep; pickCursorPosition?: Point | null; pickingClickPosition?: boolean; pixelLiveRgb?: Rgb | null; samplingPixel?: boolean; onChange: (patch: Partial<ActionStep>) => void; onSamplePixel: () => void; onPickClickPosition: () => void; }) {
   if (!step) return <CollapsibleSection title="Action Settings" defaultOpen><p className="text-sm text-muted-foreground">Select an action to edit settings.</p></CollapsibleSection>;
   return (
     <CollapsibleSection title="Action Settings" className="flex min-h-0 flex-1 flex-col overflow-hidden" contentClassName="min-h-0 flex-1 overflow-hidden">
@@ -119,15 +145,16 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
 
           {step.type === "wait" ? <><FieldRow title="Wait Duration (ms)" info="Primary wait duration for this step."><Input type="number" value={step.ms} onChange={(event) => onChange({ ms: Number(event.target.value) })} /></FieldRow><FieldRow title="Random Wait (ms)" info="Additional random wait duration."><Input type="number" value={step.random_ms} onChange={(event) => onChange({ random_ms: Number(event.target.value) })} /></FieldRow></> : null}
 
-          {step.type === "pixel_check" ? <><FieldRow title="Expected Color" info="Expected RGB value at the target pixel."><div className="flex items-center gap-2"><div className="h-8 w-12 rounded-md border border-border" style={{ backgroundColor: `rgb(${step.expected_rgb.join(",")})` }} /><span className="font-mono text-xs text-muted-foreground">{step.expected_rgb.join(", ")}</span></div></FieldRow><FieldRow title="Pixel X" info="Horizontal coordinate for sampling."><Input type="number" value={step.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></FieldRow><FieldRow title="Pixel Y" info="Vertical coordinate for sampling."><Input type="number" value={step.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></FieldRow><FieldRow title="Tolerance" info="Allowed RGB distance from expected color."><Input type="number" value={step.tolerance} onChange={(event) => onChange({ tolerance: Number(event.target.value) })} /></FieldRow><FieldRow title="Mismatch Mode" info="Action to take when color does not match."><Select value={step.mode} onChange={(event) => onChange({ mode: event.target.value as "wait_until_match" | "stop_if_mismatch" | "skip_if_mismatch" })}><option value="wait_until_match">wait until match</option><option value="stop_if_mismatch">stop if mismatch</option><option value="skip_if_mismatch">skip if mismatch</option></Select></FieldRow><FieldRow title="Sample Pixel" info="Read current RGB value from selected coordinates."><Button onClick={onSamplePixel}>Sample pixel</Button></FieldRow></> : null}
+          {step.type === "pixel_check" ? <><FieldRow title="Pixel Sampler" info="Arms pixel sampling; next click captures current color at that location."><Button variant={samplingPixel ? "success" : "default"} onClick={onSamplePixel} disabled={samplingPixel}>{samplingPixel ? "Waiting for pixel sample" : "Sample Pixel"}</Button></FieldRow><FieldRow title="Mismatch Mode" info="Action to take when color does not match."><Select value={step.mode} onChange={(event) => onChange({ mode: event.target.value as "wait_until_match" | "stop_if_mismatch" | "skip_if_mismatch" })}><option value="wait_until_match">wait until match</option><option value="stop_if_mismatch">stop if mismatch</option><option value="skip_if_mismatch">skip if mismatch</option></Select></FieldRow><FieldRow title="Expected Color" info="Expected RGB value at the target pixel."><div className="flex items-center gap-2"><div className="h-8 w-12 rounded-md border border-border" style={{ backgroundColor: `rgb(${step.expected_rgb.join(",")})` }} /><span className="font-mono text-xs text-muted-foreground">{step.expected_rgb.join(", ")}</span></div></FieldRow><FieldRow title="Pixel X" info="Horizontal coordinate for sampling."><Input type="number" value={step.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></FieldRow><FieldRow title="Pixel Y" info="Vertical coordinate for sampling."><Input type="number" value={step.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></FieldRow><FieldRow title="Tolerance" info="Allowed RGB distance from expected color."><Input type="number" value={step.tolerance} onChange={(event) => onChange({ tolerance: Number(event.target.value) })} /></FieldRow></> : null}
 
           {step.type === "key_tap" ? <FieldRow title="Key" info="Keyboard key to tap."><Input value={step.key} onChange={(event) => onChange({ key: event.target.value })} /></FieldRow> : null}
 
           {step.type === "loop_start" ? <><FieldRow title="Loop Count" info="Number of loop iterations when not infinite."><Input type="number" value={step.loop_count} disabled={step.loop_infinite} onChange={(event) => onChange({ loop_count: Math.max(1, Number(event.target.value) || 1) })} /></FieldRow><FieldRow title="Infinite Loop" info="Run loop body indefinitely until stopped."><label className="flex items-center justify-between rounded-lg bg-background/70 p-2 text-sm">Enable<input type="checkbox" checked={step.loop_infinite} onChange={(event) => onChange({ loop_infinite: event.target.checked })} /></label></FieldRow></> : null}
         </div>
 
-        <ActionDetailsSection active={Boolean(step.type === "click" && pickingClickPosition)}>
+        <ActionDetailsSection active={Boolean((step.type === "click" && pickingClickPosition) || step.type === "pixel_check")}>
           {step.type === "click" ? <CursorPreview cursor={pickCursorPosition ?? null} target={{ x: step.x, y: step.y }} /> : null}
+          {step.type === "pixel_check" ? <PixelMatchPreview live={pixelLiveRgb ?? null} expected={step.expected_rgb} tolerance={step.tolerance} /> : null}
         </ActionDetailsSection>
       </div>
     </CollapsibleSection>

@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import { defaultProfile, defaultSettings } from "../lib/defaults";
 import { createStep } from "../lib/steps";
 import { defaultState, normalizeSettings } from "../lib/settings";
-import type { ActionStep, AppMode, AppSettings, AutomationProfile, Point, ProfileFile, RuntimeState } from "../lib/types";
+import type { ActionStep, AppMode, AppSettings, AutomationProfile, Point, ProfileFile, Rgb, RuntimeState } from "../lib/types";
 
 export function useAppController() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
@@ -20,6 +20,8 @@ export function useAppController() {
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [pickingClickStepId, setPickingClickStepId] = useState("");
   const [pickCursorPosition, setPickCursorPosition] = useState<Point | null>(null);
+  const [pixelLiveRgb, setPixelLiveRgb] = useState<Rgb | null>(null);
+  const [samplingPixelStepId, setSamplingPixelStepId] = useState("");
   const captureSessionId = useRef("");
   const settingsHydrated = useRef(false);
   const settingsRef = useRef(settings);
@@ -82,21 +84,28 @@ export function useAppController() {
   }, []);
 
   useEffect(() => {
-    if (!pickingClickStepId) {
+    if (!pickingClickStepId && !samplingPixelStepId) {
       setPickCursorPosition(null);
+      setPixelLiveRgb(null);
       return undefined;
     }
 
     let active = true;
-    const refreshCursor = () => {
-      api.mousePosition()
-        .then((position) => {
-          if (active) setPickCursorPosition(position);
-        })
-        .catch(() => undefined);
+    const refreshLiveState = async () => {
+      try {
+        const position = await api.mousePosition();
+        if (!active) return;
+        setPickCursorPosition(position);
+        if (selectedStep?.type === "pixel_check") {
+          const pixel = await api.pixel(position.x, position.y);
+          if (active) setPixelLiveRgb(pixel.rgb);
+        }
+      } catch {
+        return undefined;
+      }
     };
-    refreshCursor();
-    const timer = window.setInterval(refreshCursor, 100);
+    void refreshLiveState();
+    const timer = window.setInterval(() => void refreshLiveState(), 160);
 
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -107,6 +116,7 @@ export function useAppController() {
           captureSessionId.current = "";
         }
         setPickingClickStepId("");
+        setSamplingPixelStepId("");
         setLog((items) => ["Position picker cancelled.", ...items]);
       }
     };
@@ -117,20 +127,23 @@ export function useAppController() {
       window.clearInterval(timer);
       window.removeEventListener("keydown", onKey);
     };
-  }, [pickingClickStepId]);
+  }, [pickingClickStepId, samplingPixelStepId, selectedStep?.type]);
 
   useEffect(() => {
-    if (!pickingClickStepId) return;
-    const selectedStillPicking = activeProfile.steps.some((step) => step.id === pickingClickStepId);
-    if (!selectedStillPicking || selectedStep?.id !== pickingClickStepId || selectedStep.type !== "click" || settings.mode !== "advanced") {
+    if (!pickingClickStepId && !samplingPixelStepId) return;
+    const selectedStillActive = activeProfile.steps.some((step) => step.id === (pickingClickStepId || samplingPixelStepId));
+    const invalidClickMode = Boolean(pickingClickStepId) && (!selectedStep || selectedStep.id !== pickingClickStepId || selectedStep.type !== "click");
+    const invalidPixelMode = Boolean(samplingPixelStepId) && (!selectedStep || selectedStep.id !== samplingPixelStepId || selectedStep.type !== "pixel_check");
+    if (!selectedStillActive || invalidClickMode || invalidPixelMode || settings.mode !== "advanced") {
       const sessionId = captureSessionId.current;
       if (sessionId) {
         api.cancelInputCapture(sessionId).catch(() => undefined);
         captureSessionId.current = "";
       }
       setPickingClickStepId("");
+      setSamplingPixelStepId("");
     }
-  }, [activeProfile.steps, pickingClickStepId, selectedStep, settings.mode]);
+  }, [activeProfile.steps, pickingClickStepId, samplingPixelStepId, selectedStep, settings.mode]);
 
   useEffect(() => {
     if (!settingsHydrated.current) return undefined;
@@ -343,9 +356,62 @@ export function useAppController() {
 
   const samplePixel = async () => {
     if (!selectedStep || selectedStep.type !== "pixel_check") return;
-    const sample = await api.pixel(selectedStep.x, selectedStep.y);
-    patchSelected({ expected_rgb: sample.rgb });
-    setLog((items) => [`Sampled pixel ${sample.rgb.join(", ")}.`, ...items]);
+    if (samplingPixelStepId) return;
+    const stepId = selectedStep.id;
+    setSamplingPixelStepId(stepId);
+    try {
+      const started = await api.startMouseClickCapture();
+      captureSessionId.current = started.id;
+      let snapshot = started;
+      while (snapshot.status === "pending" && captureSessionId.current === started.id) {
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+        snapshot = await api.inputCaptureStatus(started.id);
+      }
+      if (captureSessionId.current !== started.id) return;
+      captureSessionId.current = "";
+      if (snapshot.status === "cancelled") {
+        setLog((items) => ["Pixel sample cancelled.", ...items]);
+        return;
+      }
+      if (snapshot.status === "failed") {
+        setLog((items) => [snapshot.error?.toLowerCase().includes("timed out") ? "Pixel sample timed out." : `Pixel sample failed: ${snapshot.error ?? "Unknown error"}`, ...items]);
+        return;
+      }
+      const position = snapshot.result;
+      if (!position) {
+        setLog((items) => ["Pixel sample failed: capture completed without coordinates.", ...items]);
+        return;
+      }
+      const sample = await api.pixel(position.x, position.y);
+      setSettings((current) => {
+        const next = {
+          ...current,
+          profiles: current.profiles.map((profile) =>
+            profile.id === current.active_profile_id
+              ? {
+                  ...profile,
+                  steps: profile.steps.map((step) =>
+                    step.id === stepId && step.type === "pixel_check"
+                      ? { ...step, x: position.x, y: position.y, expected_rgb: sample.rgb }
+                      : step
+                  )
+                }
+              : profile
+          )
+        };
+        settingsRef.current = next;
+        return next;
+      });
+      setLog((items) => [`Sampled pixel ${sample.rgb.join(", ")} at ${position.x}, ${position.y}.`, ...items]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const cancelled = /cancel/i.test(message);
+      const timedOut = /timed out|408/i.test(message);
+      setLog((items) => [cancelled ? "Pixel sample cancelled." : timedOut ? "Pixel sample timed out." : `Pixel sample failed: ${message}`, ...items]);
+    } finally {
+      captureSessionId.current = "";
+      setSamplingPixelStepId("");
+    }
   };
 
   const pickClickPosition = async () => {
@@ -427,6 +493,7 @@ export function useAppController() {
     patchSelected,
     patchSettings,
     pickCursorPosition,
+    pixelLiveRgb,
     pickingClickStepId,
     profileError,
     profileFiles,
@@ -434,6 +501,7 @@ export function useAppController() {
     profileSaving,
     requestSaveProfile,
     runToggle,
+    samplingPixelStepId,
     samplePixel,
     saveDialogOpen,
     selectedProfileFile,

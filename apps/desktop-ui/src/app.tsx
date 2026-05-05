@@ -31,6 +31,7 @@ export function App() {
     patchSettings,
     patchSteps,
     pickCursorPosition,
+    pixelLiveRgb,
     pickClickPosition,
     pickingClickStepId,
     profileError,
@@ -39,6 +40,7 @@ export function App() {
     profileSaving,
     requestSaveProfile,
     runToggle,
+    samplingPixelStepId,
     samplePixel,
     saveDialogOpen,
     selectedProfileFile,
@@ -119,6 +121,7 @@ export function App() {
       running={state.running}
       runHotkey={settings.run_toggle_hotkey}
       selectedId={selectedStep?.id ?? ""}
+      selectedPixelLiveRgb={selectedStep?.type === "pixel_check" ? pixelLiveRgb : null}
       onSelect={setSelectedId}
       onLoopsChange={(loops_count, loops_infinite) => patchProfile({ loops_count, loops_infinite, loops: loops_infinite ? 0 : loops_count })}
       onStepsChange={patchSteps}
@@ -145,6 +148,8 @@ export function App() {
       step={selectedStep}
       pickCursorPosition={pickCursorPosition}
       pickingClickPosition={selectedStep?.id === pickingClickStepId}
+      pixelLiveRgb={pixelLiveRgb}
+      samplingPixel={selectedStep?.id === samplingPixelStepId}
       onChange={patchSelected}
       onSamplePixel={samplePixel}
       onPickClickPosition={pickClickPosition}

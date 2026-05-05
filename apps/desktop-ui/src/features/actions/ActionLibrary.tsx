@@ -15,7 +15,7 @@ export function ActionLibrary({ onAdd }: { onAdd: (type: ActionStep["type"]) => 
           <Timer size={16} /> Wait
         </Button>
         <Button variant="default" className="justify-start" onClick={() => onAdd("pixel_check")}>
-          <Crosshair size={16} /> Pixel check
+          <Crosshair size={16} /> Pixel Match
         </Button>
         <Button variant="default" className="justify-start" onClick={() => onAdd("key_tap")}>
           <Keyboard size={16} /> Key tap

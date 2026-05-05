@@ -11,6 +11,8 @@ export type Point = {
   y: number;
 };
 
+export type Rgb = [number, number, number];
+
 export type InputCaptureSnapshot = {
   id: string;
   status: "pending" | "complete" | "cancelled" | "failed";

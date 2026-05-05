@@ -143,9 +143,9 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(screen.getByText("Action Library"));
-    expect(screen.queryByText("Pixel check")).not.toBeInTheDocument();
+    expect(screen.queryByText("Pixel Match")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Action Library"));
-    expect(screen.getByText("Pixel check")).toBeInTheDocument();
+    expect(screen.getByText("Pixel Match")).toBeInTheDocument();
   });
 
   it("updates a click action from the position picker", async () => {

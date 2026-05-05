@@ -22,7 +22,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { stepIcon } from "../../lib/steps";
-import type { ActionStep, LoopStartStep } from "../../lib/types";
+import type { ActionStep, LoopStartStep, Rgb } from "../../lib/types";
 
 type LoopRange = { startIndex: number; endIndex: number; depth: number };
 type RowItem = { index: number; depth: number; collapsedSummary?: RowSummary };
@@ -32,10 +32,7 @@ type Timing = { baseMs: number; randomMs: number };
 function estimateStepTiming(step: ActionStep): Timing {
   const repeats = Math.max(1, step.repeats);
   if (step.type === "wait") {
-    return {
-      baseMs: (step.ms + step.interval_ms) * repeats,
-      randomMs: (step.random_ms + step.randomness_ms) * repeats
-    };
+    return { baseMs: (step.ms + step.interval_ms) * repeats, randomMs: (step.random_ms + step.randomness_ms) * repeats };
   }
   if (step.type === "loop_end") return { baseMs: 0, randomMs: 0 };
   return { baseMs: step.interval_ms * repeats, randomMs: step.randomness_ms * repeats };
@@ -57,48 +54,31 @@ function formatMs(ms: number): string {
 }
 
 function formatEstimate(timing: Timing): string {
-  return `~${formatMs(timing.baseMs)}${timing.randomMs > 0 ? ` ±${formatMs(timing.randomMs)}` : ""}`;
+  return `~${formatMs(timing.baseMs)}${timing.randomMs > 0 ? ` \u00b1${formatMs(timing.randomMs)}` : ""}`;
 }
 
-function rowSummary(step: ActionStep): RowSummary {
+function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selected = false): RowSummary {
   const timing = formatEstimate(estimateStepTiming(step));
   const repeat = step.repeats > 1 ? `repeats ${step.repeats}` : "repeats 1";
-  const delay = `delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` ±${formatMs(step.randomness_ms)}` : ""}`;
+  const delay = `delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` \u00b1${formatMs(step.randomness_ms)}` : ""}`;
 
   if (step.type === "click") {
-    return {
-      title: `Click ${step.button} at ${step.x}, ${step.y}`,
-      subtext: `${repeat} / ${delay} / clicks ${step.clicks}${step.random_offset > 0 ? ` / position \u00b1${step.random_offset}px` : ""} / ${timing}`
-    };
+    return { title: `Click ${step.button} at ${step.x}, ${step.y}`, subtext: `${repeat} / ${delay} / clicks ${step.clicks}${step.random_offset > 0 ? ` / position \u00b1${step.random_offset}px` : ""} / ${timing}` };
   }
   if (step.type === "wait") {
-    return {
-      title: `Wait ${formatMs(step.ms)}${step.random_ms > 0 ? ` \u00b1${formatMs(step.random_ms)}` : ""}`,
-      subtext: `${repeat} / ${delay} / ${timing}`
-    };
+    return { title: `Wait ${formatMs(step.ms)}${step.random_ms > 0 ? ` \u00b1${formatMs(step.random_ms)}` : ""}`, subtext: `${repeat} / ${delay} / ${timing}` };
   }
   if (step.type === "pixel_check") {
-    return {
-      title: `Pixel ${step.x}, ${step.y} matches ${step.expected_rgb.join(", ")} \u00b1${step.tolerance}`,
-      subtext: `${repeat} / ${delay} / ${step.mode.replace(/_/g, " ")} / ${timing}`
-    };
+    const expected = step.expected_rgb.join(", ");
+    const current = selected && selectedPixelLiveRgb ? selectedPixelLiveRgb.join(", ") : "n/a";
+    const matches = selected && selectedPixelLiveRgb
+      ? Math.max(...selectedPixelLiveRgb.map((value, index) => Math.abs(value - step.expected_rgb[index]))) <= step.tolerance
+      : false;
+    return { title: `Pixel Match: ${current} ${matches ? "=" : "!="} ${expected}`, subtext: `${repeat} / ${delay} / ${step.mode.replace(/_/g, " ")} / ${timing}` };
   }
-  if (step.type === "key_tap") {
-    return {
-      title: `Tap ${step.key}`,
-      subtext: `${repeat} / ${delay} / ${timing}`
-    };
-  }
-  if (step.type === "loop_start") {
-    return {
-      title: step.loop_infinite ? "Loop start infinite" : `Loop start ${step.loop_count}x`,
-      subtext: `${repeat} / ${delay} / ${timing}`
-    };
-  }
-  return {
-    title: "Loop end",
-    subtext: `${repeat} / ${delay} / ${timing}`
-  };
+  if (step.type === "key_tap") return { title: `Tap ${step.key}`, subtext: `${repeat} / ${delay} / ${timing}` };
+  if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop start infinite" : `Loop start ${step.loop_count}x`, subtext: `${repeat} / ${delay} / ${timing}` };
+  return { title: "Loop end", subtext: `${repeat} / ${delay} / ${timing}` };
 }
 
 function resolveLoops(steps: ActionStep[]): Map<string, LoopRange> {
@@ -115,10 +95,7 @@ function resolveLoops(steps: ActionStep[]): Map<string, LoopRange> {
     if (step.type === "loop_end") {
       depth = Math.max(0, depth - 1);
       const open = stack.pop();
-      if (!open || open.loopId !== step.loop_id) {
-        console.warn("Malformed loop structure detected at index", index);
-        continue;
-      }
+      if (!open || open.loopId !== step.loop_id) continue;
       ranges.set(step.loop_id, { startIndex: open.index, endIndex: index, depth: open.depth });
     }
   }
@@ -183,9 +160,9 @@ function moveBlock(steps: ActionStep[], fromIndex: number, toIndex: number, rang
   return next;
 }
 
-function SortableRow({ row, step, selected, onSelect, onToggleCollapse, onToggleEnabled }: { row: RowItem; step: ActionStep; selected: boolean; onSelect: () => void; onToggleCollapse: (step: LoopStartStep) => void; onToggleEnabled: () => void; }) {
+function SortableRow({ row, step, selected, selectedPixelLiveRgb, onSelect, onToggleCollapse }: { row: RowItem; step: ActionStep; selected: boolean; selectedPixelLiveRgb?: Rgb | null; onSelect: () => void; onToggleCollapse: (step: LoopStartStep) => void; }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id });
-  const summary = row.collapsedSummary ?? rowSummary(step);
+  const summary = row.collapsedSummary ?? rowSummary(step, selectedPixelLiveRgb, selected);
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, marginLeft: `${row.depth * 16}px`, width: `calc(100% - ${row.depth * 16}px)` }} className={isDragging ? "opacity-60" : ""}>
       <div className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${selected ? "border-info/45 bg-info/10" : "border-border bg-background/60 hover:bg-surface-strong"} ${step.enabled ? "" : "opacity-45"}`} onClick={onSelect}>
@@ -207,23 +184,13 @@ function SortableRow({ row, step, selected, onSelect, onToggleCollapse, onToggle
         </div>
         <div className="ml-3 flex shrink-0 items-center gap-2">
           <Badge>{String(row.index + 1).padStart(2, "0")}</Badge>
-          <button
-            type="button"
-            className={`inline-flex h-7 items-center rounded-md px-2 font-mono text-xs font-medium ring-1 transition ${step.enabled ? "bg-success/15 text-success ring-success/25 hover:bg-success/20" : "bg-surface-strong text-muted-foreground ring-white/10 hover:bg-muted"}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleEnabled();
-            }}
-          >
-            {step.enabled ? "Enabled" : "Disabled"}
-          </button>
         </div>
       </div>
     </div>
   );
 }
 
-export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, runHotkey, selectedId, onSelect, onLoopsChange, onRunToggle, onStepsChange }: { steps: ActionStep[]; loops: number; loopsCount: number; loopsInfinite: boolean; running: boolean; runHotkey: string; selectedId: string; onSelect: (id: string) => void; onLoopsChange: (count: number, infinite: boolean) => void; onRunToggle: () => void; onStepsChange: (steps: ActionStep[]) => void; }) {
+export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, runHotkey, selectedId, selectedPixelLiveRgb, onSelect, onLoopsChange, onRunToggle, onStepsChange }: { steps: ActionStep[]; loops: number; loopsCount: number; loopsInfinite: boolean; running: boolean; runHotkey: string; selectedId: string; selectedPixelLiveRgb?: Rgb | null; onSelect: (id: string) => void; onLoopsChange: (count: number, infinite: boolean) => void; onRunToggle: () => void; onStepsChange: (steps: ActionStep[]) => void; }) {
   const [loopDraft, setLoopDraft] = useState(String(loopsCount));
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -245,18 +212,6 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
     onStepsChange(steps.map((step) => (step.id === rowStep.id ? { ...step, collapsed: !rowStep.collapsed } : step)));
   };
 
-  const toggleEnabled = (rowStep: ActionStep) => {
-    if (rowStep.type === "loop_start") {
-      const index = steps.findIndex((step) => step.id === rowStep.id);
-      const range = ranges.get(rowStep.loop_id);
-      if (range && index === range.startIndex) {
-        onStepsChange(steps.map((step, stepIndex) => stepIndex >= range.startIndex && stepIndex <= range.endIndex ? { ...step, enabled: !rowStep.enabled } as ActionStep : step));
-        return;
-      }
-    }
-    onStepsChange(steps.map((step) => step.id === rowStep.id ? { ...step, enabled: !step.enabled } as ActionStep : step));
-  };
-
   return (
     <CollapsibleSection title="Sequence Builder" icon={<RadioTower size={16} />} actions={<div className="flex items-center gap-2"><label className="flex items-center gap-2 text-xs text-muted-foreground">Loops<div className="relative"><Input className="h-8 w-24 pr-8" type="number" min={1} value={loopsInfinite ? "" : loopDraft} disabled={loopsInfinite} onChange={(event) => { const nextValue = event.target.value; setLoopDraft(nextValue); const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 1) onLoopsChange(Math.floor(parsed), false); }} onBlur={() => { const parsed = Number(loopDraft); if (Number.isFinite(parsed) && parsed >= 1) { const safe = Math.floor(parsed); onLoopsChange(safe, false); setLoopDraft(String(safe)); } else { setLoopDraft(String(loopsCount)); } }} /><button className={`absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 ${loopsInfinite ? "text-accent" : "text-muted-foreground hover:text-foreground"}`} onClick={() => onLoopsChange(loopsCount, !loopsInfinite)} title="Repeat indefinitely" type="button"><Infinity size={14} /></button></div></label><Button variant={running ? "danger" : "success"} onClick={onRunToggle}>{running ? <Square size={16} /> : <RadioTower size={16} />}{running ? "Stop sequence" : "Run sequence"}<Keycap>{runHotkey}</Keycap></Button></div>}>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
@@ -264,7 +219,7 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
           <div className="grid gap-2">
             {rows.map((row) => {
               const step = steps[row.index];
-              return <SortableRow key={step.id} row={row} step={step} selected={step.id === selectedId} onSelect={() => onSelect(step.id)} onToggleCollapse={toggleCollapse} onToggleEnabled={() => toggleEnabled(step)} />;
+              return <SortableRow key={step.id} row={row} step={step} selected={step.id === selectedId} selectedPixelLiveRgb={selectedPixelLiveRgb} onSelect={() => onSelect(step.id)} onToggleCollapse={toggleCollapse} />;
             })}
           </div>
         </SortableContext>
