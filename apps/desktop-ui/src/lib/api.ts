@@ -1,4 +1,4 @@
-import type { ActionStep, AppSettings, PixelSample, ProfileDirectoryStatus, ProfileFile, RuntimeState, SimpleSettings } from "./types";
+import type { ActionStep, AppSettings, InputCaptureSnapshot, PixelSample, Point, ProfileDirectoryStatus, ProfileFile, RuntimeState, SimpleSettings } from "./types";
 
 const API_BASE = import.meta.env.VITE_ACE_API_BASE ?? "http://127.0.0.1:8765";
 
@@ -54,8 +54,14 @@ export const api = {
     }),
   openProfilesFolder: () =>
     request<{ message: string }>("/profiles/open-folder", { method: "POST" }),
-  mousePosition: () => request<{ x: number; y: number }>("/mouse-position"),
+  mousePosition: () => request<Point>("/mouse-position"),
   pickClickPosition: () =>
-    request<{ x: number; y: number }>("/mouse-position/next-click", { method: "POST" }),
+    request<Point>("/mouse-position/next-click", { method: "POST" }),
+  startMouseClickCapture: () =>
+    request<InputCaptureSnapshot>("/input-capture/mouse-click/start", { method: "POST" }),
+  inputCaptureStatus: (sessionId: string) =>
+    request<InputCaptureSnapshot>(`/input-capture/${encodeURIComponent(sessionId)}`),
+  cancelInputCapture: (sessionId: string) =>
+    request<InputCaptureSnapshot>(`/input-capture/${encodeURIComponent(sessionId)}/cancel`, { method: "POST" }),
   pixel: (x: number, y: number) => request<PixelSample>(`/pixel?x=${x}&y=${y}`)
 };

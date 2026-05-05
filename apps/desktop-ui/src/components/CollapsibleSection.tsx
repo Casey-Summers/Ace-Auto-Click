@@ -12,6 +12,7 @@ type Props = {
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  contentClassName?: string;
   density?: "default" | "compact";
 };
 
@@ -22,6 +23,7 @@ export function CollapsibleSection({
   actions,
   children,
   className,
+  contentClassName,
   density = "default"
 }: Props) {
   const [open, setOpen] = useState(defaultOpen);
@@ -40,7 +42,7 @@ export function CollapsibleSection({
         </button>
         <div className="flex items-center gap-2">{actions}</div>
       </div>
-      {open ? <div className={cn("px-3", density === "compact" ? "pb-2" : "pb-3")}>{children}</div> : null}
+      {open ? <div className={cn("px-3", density === "compact" ? "pb-2" : "pb-3", contentClassName)}>{children}</div> : null}
     </section>
   );
 }

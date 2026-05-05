@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from typing import Any
-import threading
 
 import pyautogui
 from fastapi import APIRouter, HTTPException
-from pynput import mouse
 
 from ace_auto_click.api.models import (
     AppSettings,
@@ -22,6 +20,7 @@ from ace_auto_click.api.runtime_state import engine, hotkeys, recorder, set_stat
 from ace_auto_click.api.sequence_service import active_profile, expand_loop_markers, sequence_for_run, to_action_step
 from ace_auto_click.api.settings_service import load_app_settings, save_app_settings
 from ace_auto_click.automation.engine import ClickSettings
+from ace_auto_click.automation import input_capture
 from ace_auto_click.automation.pixels import PixelCondition, get_pixel_rgb
 from ace_auto_click.storage.profiles import (
     ensure_profiles_dir,
@@ -53,7 +52,8 @@ def trigger_run_toggle() -> RuntimeState:
     if not steps:
         set_status("Error: no active profile sequence")
         return state()
-    engine.start_sequence([to_action_step(step) for step in steps], loops=loops)
+    compiled = expand_loop_markers(steps)
+    engine.start_sequence([to_action_step(step) for step in compiled], loops=loops)
     return state()
 
 
@@ -192,24 +192,55 @@ def mouse_position() -> dict[str, int]:
 
 @router.post("/mouse-position/next-click")
 def next_click_position() -> dict[str, int]:
-    clicked: dict[str, int] = {}
-    ready = threading.Event()
+    try:
+        captured = input_capture.capture_next_mouse_click(timeout_s=30, cancel_keys={"esc"})
+    except input_capture.InputCaptureTimeoutError as exc:
+        raise HTTPException(status_code=408, detail=str(exc)) from exc
+    except input_capture.InputCaptureCancelledError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if captured.x is None or captured.y is None:
+        raise HTTPException(status_code=500, detail="Mouse capture did not return coordinates.")
+    return {"x": captured.x, "y": captured.y}
 
-    def on_click(x: int, y: int, _button: object, pressed: bool) -> bool | None:
-        if pressed:
-            clicked["x"] = int(x)
-            clicked["y"] = int(y)
-            ready.set()
-            return False
-        return None
 
-    listener = mouse.Listener(on_click=on_click)
-    listener.start()
-    if not ready.wait(timeout=30):
-        listener.stop()
-        raise HTTPException(status_code=408, detail="Timed out waiting for click location.")
-    listener.join(timeout=1)
-    return clicked
+def _capture_snapshot_payload(snapshot: input_capture.CaptureSessionSnapshot) -> dict[str, Any]:
+    payload: dict[str, Any] = {"id": snapshot.id, "status": snapshot.status, "error": snapshot.error}
+    if snapshot.result is not None:
+        payload["result"] = {
+            "kind": snapshot.result.kind,
+            "x": snapshot.result.x,
+            "y": snapshot.result.y,
+            "button": snapshot.result.button,
+            "key": snapshot.result.key,
+            "cancelled": snapshot.result.cancelled,
+        }
+    else:
+        payload["result"] = None
+    return payload
+
+
+@router.post("/input-capture/mouse-click/start")
+def start_mouse_click_capture() -> dict[str, Any]:
+    snapshot = input_capture.capture_manager.start_mouse_click(timeout_s=30, cancel_keys={"esc"})
+    if snapshot.status == "failed":
+        raise HTTPException(status_code=500, detail=snapshot.error or "Mouse capture could not start.")
+    return _capture_snapshot_payload(snapshot)
+
+
+@router.get("/input-capture/{session_id}")
+def input_capture_status(session_id: str) -> dict[str, Any]:
+    snapshot = input_capture.capture_manager.get(session_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Input capture session was not found.")
+    return _capture_snapshot_payload(snapshot)
+
+
+@router.post("/input-capture/{session_id}/cancel")
+def cancel_input_capture(session_id: str) -> dict[str, Any]:
+    snapshot = input_capture.capture_manager.cancel(session_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Input capture session was not found.")
+    return _capture_snapshot_payload(snapshot)
 
 
 @router.get("/pixel", response_model=PixelSample)
@@ -243,3 +274,4 @@ def startup() -> None:
 
 def shutdown() -> None:
     hotkeys.stop()
+    input_capture.capture_manager.cancel_pending("Application shutting down.")

@@ -30,6 +30,7 @@ export function App() {
     patchSelected,
     patchSettings,
     patchSteps,
+    pickCursorPosition,
     pickClickPosition,
     pickingClickStepId,
     profileError,
@@ -142,6 +143,7 @@ export function App() {
   ) : (
     <StepDetailsPanel
       step={selectedStep}
+      pickCursorPosition={pickCursorPosition}
       pickingClickPosition={selectedStep?.id === pickingClickStepId}
       onChange={patchSelected}
       onSamplePixel={samplePixel}

@@ -17,6 +17,10 @@ const apiMock = vi.hoisted(() => ({
   loadProfile: vi.fn(),
   openProfilesFolder: vi.fn(),
   mousePosition: vi.fn(),
+  pickClickPosition: vi.fn(),
+  startMouseClickCapture: vi.fn(),
+  inputCaptureStatus: vi.fn(),
+  cancelInputCapture: vi.fn(),
   pixel: vi.fn()
 }));
 
@@ -42,6 +46,10 @@ describe("App", () => {
     apiMock.loadProfile.mockResolvedValue(defaultSettings);
     apiMock.openProfilesFolder.mockResolvedValue({ message: "Profiles folder opened." });
     apiMock.mousePosition.mockResolvedValue({ x: 25, y: 50 });
+    apiMock.pickClickPosition.mockResolvedValue({ x: 77, y: 88 });
+    apiMock.startMouseClickCapture.mockResolvedValue({ id: "capture-1", status: "pending", result: null, error: null });
+    apiMock.inputCaptureStatus.mockResolvedValue({ id: "capture-1", status: "complete", result: { kind: "mouse_click", x: 77, y: 88, button: "Button.left" }, error: null });
+    apiMock.cancelInputCapture.mockResolvedValue({ id: "capture-1", status: "cancelled", result: null, error: "Input capture cancelled." });
   });
 
   it("renders the refined workspace without forbidden shortcut behavior", async () => {
@@ -51,6 +59,8 @@ describe("App", () => {
     expect(screen.getByText("normal")).toBeInTheDocument();
     expect(screen.getByText("advanced")).toBeInTheDocument();
     expect(screen.getByText("Action Library")).toBeInTheDocument();
+    expect(screen.getByText("Action Settings")).toBeInTheDocument();
+    expect(screen.queryByText("Selected Step")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Profile name")).toBeInTheDocument();
     expect(screen.queryByText("Runtime")).not.toBeInTheDocument();
     expect(screen.getByText("Emergency stop")).toBeInTheDocument();
@@ -100,7 +110,7 @@ describe("App", () => {
   it("captures a new keybind reactively", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Settings/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Settings$/i }));
     fireEvent.click(await screen.findByRole("button", { name: "Keybinds" }));
     fireEvent.click(screen.getAllByText("Click to change")[0]);
     expect(screen.getByText("Press a key...")).toBeInTheDocument();
@@ -136,5 +146,47 @@ describe("App", () => {
     expect(screen.queryByText("Pixel check")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Action Library"));
     expect(screen.getByText("Pixel check")).toBeInTheDocument();
+  });
+
+  it("updates a click action from the position picker", async () => {
+    render(<App />);
+    await screen.findByText(/Connected to Ace Auto Click/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Pick Click Position" }));
+
+    await waitFor(() => expect(apiMock.startMouseClickCapture).toHaveBeenCalled());
+    await waitFor(() => expect(apiMock.inputCaptureStatus).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByDisplayValue("77")).toBeInTheDocument());
+    expect(screen.getByDisplayValue("88")).toBeInTheDocument();
+  });
+
+  it("shows action details and live cursor coordinates while picking", async () => {
+    apiMock.mousePosition.mockResolvedValue({ x: 11, y: 22 });
+    apiMock.startMouseClickCapture.mockImplementation(() => new Promise(() => undefined));
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Pick Click Position" }));
+
+    expect(await screen.findByText("Action Details")).toBeInTheDocument();
+    expect(await screen.findByText("11, 22")).toBeInTheDocument();
+    expect(screen.getByText("Click anywhere to capture. Esc cancels.")).toBeInTheDocument();
+  });
+
+  it("keeps action details hidden when no action detail is active", () => {
+    render(<App />);
+
+    expect(screen.queryByText("Action Details")).not.toBeInTheDocument();
+  });
+
+  it("clears picker state after a cancelled position picker", async () => {
+    apiMock.startMouseClickCapture.mockResolvedValue({ id: "capture-1", status: "pending", result: null, error: null });
+    apiMock.inputCaptureStatus.mockResolvedValue({ id: "capture-1", status: "cancelled", result: null, error: "Input capture cancelled." });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Pick Click Position" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pick Click Position" })).toBeEnabled());
+    expect(screen.queryByText("Action Details")).not.toBeInTheDocument();
+    expect(await screen.findByText("Position picker cancelled.")).toBeInTheDocument();
   });
 });

@@ -6,6 +6,23 @@ export type RuntimeState = {
   last_error: string | null;
 };
 
+export type Point = {
+  x: number;
+  y: number;
+};
+
+export type InputCaptureSnapshot = {
+  id: string;
+  status: "pending" | "complete" | "cancelled" | "failed";
+  result: (Point & {
+    kind: string;
+    button?: string | null;
+    key?: string | null;
+    cancelled?: boolean;
+  }) | null;
+  error: string | null;
+};
+
 export type ProfileFile = {
   file_name: string;
   profile_name: string;

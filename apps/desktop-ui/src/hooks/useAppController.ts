@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import { defaultProfile, defaultSettings } from "../lib/defaults";
 import { createStep } from "../lib/steps";
 import { defaultState, normalizeSettings } from "../lib/settings";
-import type { ActionStep, AppMode, AppSettings, AutomationProfile, ProfileFile, RuntimeState } from "../lib/types";
+import type { ActionStep, AppMode, AppSettings, AutomationProfile, Point, ProfileFile, RuntimeState } from "../lib/types";
 
 export function useAppController() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
@@ -19,6 +19,8 @@ export function useAppController() {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
   const [pickingClickStepId, setPickingClickStepId] = useState("");
+  const [pickCursorPosition, setPickCursorPosition] = useState<Point | null>(null);
+  const captureSessionId = useRef("");
   const settingsHydrated = useRef(false);
   const settingsRef = useRef(settings);
   const [log, setLog] = useState<string[]>(["UI ready. Start the API with python app.py api."]);
@@ -78,6 +80,57 @@ export function useAppController() {
 
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!pickingClickStepId) {
+      setPickCursorPosition(null);
+      return undefined;
+    }
+
+    let active = true;
+    const refreshCursor = () => {
+      api.mousePosition()
+        .then((position) => {
+          if (active) setPickCursorPosition(position);
+        })
+        .catch(() => undefined);
+    };
+    refreshCursor();
+    const timer = window.setInterval(refreshCursor, 100);
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        const sessionId = captureSessionId.current;
+        if (sessionId) {
+          api.cancelInputCapture(sessionId).catch(() => undefined);
+          captureSessionId.current = "";
+        }
+        setPickingClickStepId("");
+        setLog((items) => ["Position picker cancelled.", ...items]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [pickingClickStepId]);
+
+  useEffect(() => {
+    if (!pickingClickStepId) return;
+    const selectedStillPicking = activeProfile.steps.some((step) => step.id === pickingClickStepId);
+    if (!selectedStillPicking || selectedStep?.id !== pickingClickStepId || selectedStep.type !== "click" || settings.mode !== "advanced") {
+      const sessionId = captureSessionId.current;
+      if (sessionId) {
+        api.cancelInputCapture(sessionId).catch(() => undefined);
+        captureSessionId.current = "";
+      }
+      setPickingClickStepId("");
+    }
+  }, [activeProfile.steps, pickingClickStepId, selectedStep, settings.mode]);
 
   useEffect(() => {
     if (!settingsHydrated.current) return undefined;
@@ -297,20 +350,59 @@ export function useAppController() {
 
   const pickClickPosition = async () => {
     if (!selectedStep || selectedStep.type !== "click") return;
-    setPickingClickStepId(selectedStep.id);
+    if (pickingClickStepId) return;
+    const stepId = selectedStep.id;
+    setPickingClickStepId(stepId);
     try {
-      const position = await api.pickClickPosition();
-      patchSteps(
-        activeProfile.steps.map((step) =>
-          step.id === selectedStep.id && step.type === "click"
-            ? { ...step, x: position.x, y: position.y }
-            : step
-        )
-      );
+      const started = await api.startMouseClickCapture();
+      captureSessionId.current = started.id;
+      let snapshot = started;
+      while (snapshot.status === "pending" && captureSessionId.current === started.id) {
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+        snapshot = await api.inputCaptureStatus(started.id);
+      }
+      if (captureSessionId.current !== started.id) return;
+      captureSessionId.current = "";
+      if (snapshot.status === "cancelled") {
+        setLog((items) => ["Position picker cancelled.", ...items]);
+        return;
+      }
+      if (snapshot.status === "failed") {
+        setLog((items) => [snapshot.error?.toLowerCase().includes("timed out") ? "Position picker timed out." : `Position picker failed: ${snapshot.error ?? "Unknown error"}`, ...items]);
+        return;
+      }
+      const position = snapshot.result;
+      if (!position) {
+        setLog((items) => ["Position picker failed: capture completed without coordinates.", ...items]);
+        return;
+      }
+      setSettings((current) => {
+        const next = {
+          ...current,
+          profiles: current.profiles.map((profile) =>
+            profile.id === current.active_profile_id
+              ? {
+                  ...profile,
+                  steps: profile.steps.map((step) =>
+                    step.id === stepId && step.type === "click"
+                      ? { ...step, x: position.x, y: position.y }
+                      : step
+                  )
+                }
+              : profile
+          )
+        };
+        settingsRef.current = next;
+        return next;
+      });
       setLog((items) => [`Picked click position ${position.x}, ${position.y}.`, ...items]);
     } catch (error) {
-      setLog((items) => [`Position picker failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
+      const message = error instanceof Error ? error.message : String(error);
+      const cancelled = /cancel/i.test(message);
+      const timedOut = /timed out|408/i.test(message);
+      setLog((items) => [cancelled ? "Position picker cancelled." : timedOut ? "Position picker timed out." : `Position picker failed: ${message}`, ...items]);
     } finally {
+      captureSessionId.current = "";
       setPickingClickStepId("");
     }
   };
@@ -334,6 +426,7 @@ export function useAppController() {
     patchProfile,
     patchSelected,
     patchSettings,
+    pickCursorPosition,
     pickingClickStepId,
     profileError,
     profileFiles,
