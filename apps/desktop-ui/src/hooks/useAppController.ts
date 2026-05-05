@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import { defaultProfile, defaultSettings } from "../lib/defaults";
 import { createStep } from "../lib/steps";
 import { defaultState, normalizeSettings } from "../lib/settings";
-import type { ActionStep, AppMode, AppSettings, AutomationProfile, Point, ProfileFile, Rgb, RuntimeState } from "../lib/types";
+import type { ActionStep, AppMode, AppSettings, AutomationProfile, ExecutionEvent, Point, ProfileFile, Rgb, RuntimeState } from "../lib/types";
 
 export function useAppController() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
@@ -27,13 +27,15 @@ export function useAppController() {
   const settingsHydrated = useRef(false);
   const settingsRef = useRef(settings);
   const [log, setLog] = useState<string[]>(["UI ready. Start the API with python app.py api."]);
+  const [executionEvents, setExecutionEvents] = useState<ExecutionEvent[]>([]);
+  const executionAfter = useRef(0);
 
   const activeProfile = useMemo(
     () => settings.profiles.find((profile) => profile.id === settings.active_profile_id) ?? settings.profiles[0] ?? defaultProfile,
     [settings]
   );
   const selectedStep = useMemo(
-    () => activeProfile.steps.find((step) => step.id === selectedId) ?? activeProfile.steps[0],
+    () => (selectedId ? activeProfile.steps.find((step) => step.id === selectedId) : undefined),
     [activeProfile.steps, selectedId]
   );
   const profileNameError = useMemo(() => {
@@ -83,13 +85,20 @@ export function useAppController() {
       .catch((error) => setLog((items) => [`API unavailable: ${error.message}`, ...items]));
 
     void refreshProfiles();
+  }, []);
 
+  useEffect(() => {
+    const intervalMs = state.running ? 120 : 1200;
     const timer = window.setInterval(() => {
       api.getState().then(setState).catch(() => undefined);
-    }, 1200);
-
+      api.executionEvents(executionAfter.current).then((events) => {
+        if (!events.length) return;
+        executionAfter.current = Math.max(executionAfter.current, ...events.map((event) => event.sequence_no));
+        setExecutionEvents((current) => [...current, ...events].slice(-120));
+      }).catch(() => undefined);
+    }, intervalMs);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [state.running]);
 
   useEffect(() => {
     if (!pickingClickStepId && !samplingPixelStepId) {
@@ -230,6 +239,7 @@ export function useAppController() {
   };
 
   const patchSelected = (patch: Partial<ActionStep>) => {
+    if (!selectedStep) return;
     if (selectedStep?.type === "loop_start" && patch.enabled !== undefined) {
       const startIndex = activeProfile.steps.findIndex((step) => step.id === selectedStep.id);
       const range = findLoopRange(activeProfile.steps, startIndex);
@@ -368,6 +378,10 @@ export function useAppController() {
     setSettingsOpen(true);
     setFocusEmergency(true);
     setFocusKeybind("emergency");
+  };
+
+  const selectStep = (id: string) => {
+    setSelectedId((current) => (current === id ? "" : id));
   };
 
   const openRunHotkeySettings = () => {
@@ -580,11 +594,13 @@ export function useAppController() {
     setProfileError,
     setSaveDialogOpen,
     setSelectedId,
+    selectStep,
     setSelectedProfileFile,
     setSettingsOpen,
     settings,
     settingsOpen,
     state,
+    executionEvents,
     setFocusEmergency,
     setFocusKeybind,
     setMode,

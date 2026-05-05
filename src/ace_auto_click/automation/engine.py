@@ -4,6 +4,7 @@ import random
 import threading
 import time
 from dataclasses import dataclass
+from collections import deque
 from typing import Any, Callable, Dict, List, Optional
 
 import pyautogui
@@ -39,6 +40,25 @@ class ClickEngine:
         self._mouse_ctl = mouse.Controller()
         self._kb_ctl = keyboard.Controller()
         self.current_step_id: str | None = None
+        self.current_step_state: str | None = None
+        self._execution_events: deque[dict[str, Any]] = deque(maxlen=512)
+        self._execution_seq = 0
+        self._execution_lock = threading.Lock()
+
+    def _emit_execution_event(self, step: ActionStep, phase: str) -> None:
+        with self._execution_lock:
+            self._execution_seq += 1
+            self._execution_events.append({
+                "step_id": step.id,
+                "step_type": step.type,
+                "phase": phase,
+                "sequence_no": self._execution_seq,
+                "ts_ms": int(time.time() * 1000),
+            })
+
+    def get_execution_events(self, after: int = 0) -> list[dict[str, Any]]:
+        with self._execution_lock:
+            return [event for event in self._execution_events if int(event["sequence_no"]) > after]
 
     def is_running(self) -> bool:
         return self._active_thread is not None and self._active_thread.is_alive()
@@ -117,10 +137,20 @@ class ClickEngine:
                 while (
                     loops == 0 or loop_count < loops
                 ) and not self._stop_evt.is_set():
+                    if loop_count > 0:
+                        for step in steps:
+                            if step.type == "loop_start":
+                                self._emit_execution_event(step, "loop_repeat")
                     for step in steps:
                         if self._stop_evt.is_set():
                             break
+                        self._emit_execution_event(step, "step_start")
+                        if step.type == "loop_start":
+                            self._emit_execution_event(step, "loop_enter")
+                        if step.type == "loop_end":
+                            self._emit_execution_event(step, "loop_end")
                         self.current_step_id = step.id
+                        self.current_step_state = "running"
                         cont = step.execute(self)
                         if not cont:
                             # Step logic requested stop
@@ -138,6 +168,7 @@ class ClickEngine:
                 self._on_status(f"Error: {e}")
             finally:
                 self.current_step_id = None
+                self.current_step_state = None
                 self._on_status("Advanced Mode: OFF")
                 self._active_thread = None
 

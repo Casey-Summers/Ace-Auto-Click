@@ -10,6 +10,7 @@ from ace_auto_click.api.models import (
     CommandResult,
     PixelSample,
     ProductName,
+    ExecutionEvent,
     ProfileDirectoryStatus,
     ProfileFile,
     RuntimeState,
@@ -68,6 +69,11 @@ def health() -> dict[str, str]:
 @router.get("/state", response_model=RuntimeState)
 def get_state() -> RuntimeState:
     return state()
+
+
+@router.get("/execution-events", response_model=list[ExecutionEvent])
+def execution_events(after: int = 0) -> list[ExecutionEvent]:
+    return [ExecutionEvent.model_validate(item) for item in engine.get_execution_events(after)]
 
 
 @router.get("/settings", response_model=AppSettings)

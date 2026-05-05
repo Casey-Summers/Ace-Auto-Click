@@ -81,6 +81,7 @@ class WaitStep(ActionStep):
     random_ms: int = 0
 
     def _run(self, engine: Any) -> bool:
+        engine.current_step_state = "waiting"
         delay_s = self.ms / 1000.0
         if self.random_ms > 0:
             delay_s += random.uniform(0, self.random_ms / 1000.0)
@@ -106,15 +107,19 @@ class PixelCheckStep(ActionStep):
 
     def _run(self, engine: Any) -> bool:
         if self.mode == "wait_until_match":
+            engine.current_step_state = "waiting"
             while not engine._stop_evt.is_set():
                 current = get_pixel_rgb(self.x, self.y)
                 if rgb_close(current, self.expected_rgb, self.tolerance):
+                    engine.current_step_state = "running"
                     return True
+                engine.current_step_state = "condition_false"
                 time.sleep(0.1)
             return False
 
         current = get_pixel_rgb(self.x, self.y)
         is_match = rgb_close(current, self.expected_rgb, self.tolerance)
+        engine.current_step_state = "running" if is_match else "condition_false"
 
         if self.mode == "stop_if_mismatch" and not is_match:
             return False

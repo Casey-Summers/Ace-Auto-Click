@@ -43,10 +43,12 @@ export function App() {
     requestSaveProfile,
     runToggle,
     samplingPixelStepId,
+    executionEvents,
     samplePixel,
     saveDialogOpen,
     selectedProfileFile,
     selectedStep,
+    selectStep,
     setFocusEmergency,
     setFocusKeybind,
     setLoadDialogOpen,
@@ -129,7 +131,9 @@ export function App() {
       selectedPixelLiveRgb={selectedStep?.type === "pixel_check" ? pixelLiveRgb : null}
       samplingPixelStepId={samplingPixelStepId}
       executingStepId={state.current_step_id}
-      onSelect={setSelectedId}
+      executingStepState={state.current_step_state}
+      executionEvents={executionEvents}
+      onSelect={selectStep}
       onLoopsChange={(loops_count, loops_infinite) => patchProfile({ loops_count, loops_infinite, loops: loops_infinite ? 0 : loops_count })}
       onStepsChange={patchSteps}
       onRunToggle={runToggle}

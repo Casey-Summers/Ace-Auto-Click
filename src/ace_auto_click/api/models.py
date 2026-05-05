@@ -154,6 +154,15 @@ class RuntimeState(BaseModel):
     status: str = "Idle"
     last_error: Optional[str] = None
     current_step_id: Optional[str] = None
+    current_step_state: Optional[str] = None
+
+
+class ExecutionEvent(BaseModel):
+    step_id: str
+    step_type: str
+    phase: Literal["step_start", "loop_enter", "loop_end", "loop_repeat"]
+    sequence_no: int
+    ts_ms: int
 
 
 class CommandResult(BaseModel):

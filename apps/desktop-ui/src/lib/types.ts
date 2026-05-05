@@ -5,6 +5,15 @@ export type RuntimeState = {
   status: string;
   last_error: string | null;
   current_step_id?: string | null;
+  current_step_state?: "running" | "waiting" | "condition_false" | null;
+};
+
+export type ExecutionEvent = {
+  step_id: string;
+  step_type: string;
+  phase: "step_start" | "loop_enter" | "loop_end" | "loop_repeat";
+  sequence_no: number;
+  ts_ms: number;
 };
 
 export type Point = {
