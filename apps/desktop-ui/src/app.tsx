@@ -1,7 +1,7 @@
-import { Settings, Zap } from "lucide-react";
+import { AlertTriangle, Settings, Zap } from "lucide-react";
 
-import { EmergencyStopButton } from "./components/EmergencyStopButton";
 import { ModeToggle } from "./components/ModeToggle";
+import { SplitHotkeyActionButton } from "./components/SplitHotkeyActionButton";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { ActionLibrary } from "./features/actions/ActionLibrary";
@@ -21,11 +21,13 @@ export function App() {
     confirmSaveProfile,
     emergencyStop,
     focusEmergency,
+    focusKeybind,
     loadDialogOpen,
     loadProfile,
     log,
     openEmergencySettings,
     openProfilesFolder,
+    openRunHotkeySettings,
     patchProfile,
     patchSelected,
     patchSettings,
@@ -46,6 +48,7 @@ export function App() {
     selectedProfileFile,
     selectedStep,
     setFocusEmergency,
+    setFocusKeybind,
     setLoadDialogOpen,
     setProfileError,
     setSaveDialogOpen,
@@ -79,11 +82,13 @@ export function App() {
           <Settings size={16} />
           Settings
         </Button>
-        <EmergencyStopButton
+        <SplitHotkeyActionButton
+          tone="danger"
+          icon={<AlertTriangle size={16} />}
+          label="Emergency stop"
           hotkey={settings.emergency_stop_hotkey}
-          running={state.running}
-          onStop={emergencyStop}
-          onKeybindClick={openEmergencySettings}
+          onAction={emergencyStop}
+          onHotkey={state.running ? emergencyStop : openEmergencySettings}
         />
       </div>
     </header>
@@ -122,10 +127,14 @@ export function App() {
       runHotkey={settings.run_toggle_hotkey}
       selectedId={selectedStep?.id ?? ""}
       selectedPixelLiveRgb={selectedStep?.type === "pixel_check" ? pixelLiveRgb : null}
+      samplingPixelStepId={samplingPixelStepId}
+      executingStepId={state.current_step_id}
       onSelect={setSelectedId}
       onLoopsChange={(loops_count, loops_infinite) => patchProfile({ loops_count, loops_infinite, loops: loops_infinite ? 0 : loops_count })}
       onStepsChange={patchSteps}
       onRunToggle={runToggle}
+      onRunHotkeyClick={openRunHotkeySettings}
+      onSamplePixelFromClickStep={controller.samplePixelFromClickStep}
     />
   ) : (
     <NormalRunPanel
@@ -153,6 +162,7 @@ export function App() {
       onChange={patchSelected}
       onSamplePixel={samplePixel}
       onPickClickPosition={pickClickPosition}
+      onDelete={controller.deleteSelectedStep}
     />
   );
 
@@ -165,11 +175,13 @@ export function App() {
           activeProfile={activeProfile}
           running={state.running}
           focusEmergency={focusEmergency}
+          focusKeybind={focusKeybind}
           onSettingsChange={patchSettings}
           onProfileChange={patchProfile}
           onClose={() => {
             setSettingsOpen(false);
             setFocusEmergency(false);
+            setFocusKeybind("");
           }}
         />
       ) : null}

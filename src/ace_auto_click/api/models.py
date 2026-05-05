@@ -153,6 +153,7 @@ class RuntimeState(BaseModel):
     recording: bool = False
     status: str = "Idle"
     last_error: Optional[str] = None
+    current_step_id: Optional[str] = None
 
 
 class CommandResult(BaseModel):

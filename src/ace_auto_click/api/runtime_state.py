@@ -26,6 +26,7 @@ def state() -> RuntimeState:
         recording=recorder.is_recording(),
         status=_status,
         last_error=_last_error,
+        current_step_id=engine.current_step_id,
     )
 
 

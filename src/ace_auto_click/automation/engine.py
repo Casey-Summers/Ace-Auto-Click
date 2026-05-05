@@ -38,6 +38,7 @@ class ClickEngine:
 
         self._mouse_ctl = mouse.Controller()
         self._kb_ctl = keyboard.Controller()
+        self.current_step_id: str | None = None
 
     def is_running(self) -> bool:
         return self._active_thread is not None and self._active_thread.is_alive()
@@ -119,7 +120,7 @@ class ClickEngine:
                     for step in steps:
                         if self._stop_evt.is_set():
                             break
-
+                        self.current_step_id = step.id
                         cont = step.execute(self)
                         if not cont:
                             # Step logic requested stop
@@ -136,6 +137,7 @@ class ClickEngine:
             except Exception as e:
                 self._on_status(f"Error: {e}")
             finally:
+                self.current_step_id = None
                 self._on_status("Advanced Mode: OFF")
                 self._active_thread = None
 

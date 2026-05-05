@@ -12,6 +12,7 @@ export function useAppController() {
   const [selectedId, setSelectedId] = useState(defaultProfile.steps[0].id);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [focusEmergency, setFocusEmergency] = useState(false);
+  const [focusKeybind, setFocusKeybind] = useState<"" | "run" | "emergency">("");
   const [profileFiles, setProfileFiles] = useState<ProfileFile[]>([]);
   const [selectedProfileFile, setSelectedProfileFile] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
@@ -62,7 +63,14 @@ export function useAppController() {
 
   useEffect(() => {
     document.documentElement.classList.toggle("light", settings.theme === "light");
-  }, [settings.theme]);
+    const colors = settings.action_icon_colors ?? {};
+    document.documentElement.style.setProperty("--icon-click", colors.click ?? "#55B3FF");
+    document.documentElement.style.setProperty("--icon-wait", colors.wait ?? "#55B3FF");
+    document.documentElement.style.setProperty("--icon-pixel", colors.pixel_check ?? "#55B3FF");
+    document.documentElement.style.setProperty("--icon-key", colors.key_tap ?? "#55B3FF");
+    document.documentElement.style.setProperty("--icon-loop-start", colors.loop_start ?? "#55B3FF");
+    document.documentElement.style.setProperty("--icon-loop-end", colors.loop_end ?? "#55B3FF");
+  }, [settings.theme, settings.action_icon_colors]);
 
   useEffect(() => {
     Promise.all([api.getSettings(), api.getState()])
@@ -98,6 +106,9 @@ export function useAppController() {
         setPickCursorPosition(position);
         if (selectedStep?.type === "pixel_check") {
           const pixel = await api.pixel(position.x, position.y);
+          if (active) setPixelLiveRgb(pixel.rgb);
+        } else if (samplingPixelStepId && selectedStep?.type === "click") {
+          const pixel = await api.pixel(selectedStep.x, selectedStep.y);
           if (active) setPixelLiveRgb(pixel.rgb);
         }
       } catch {
@@ -175,6 +186,10 @@ export function useAppController() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  useEffect(() => {
+    if (state.running) setSelectedId("");
+  }, [state.running]);
 
   const patchSettings = (patch: Partial<AppSettings>) => {
     setSettings((current) => {
@@ -352,6 +367,13 @@ export function useAppController() {
   const openEmergencySettings = () => {
     setSettingsOpen(true);
     setFocusEmergency(true);
+    setFocusKeybind("emergency");
+  };
+
+  const openRunHotkeySettings = () => {
+    setSettingsOpen(true);
+    setFocusEmergency(false);
+    setFocusKeybind("run");
   };
 
   const samplePixel = async () => {
@@ -411,6 +433,50 @@ export function useAppController() {
     } finally {
       captureSessionId.current = "";
       setSamplingPixelStepId("");
+    }
+  };
+
+  const deleteSelectedStep = () => {
+    if (!selectedStep) return;
+    const currentIndex = activeProfile.steps.findIndex((step) => step.id === selectedStep.id);
+    if (currentIndex < 0) return;
+    const nextSteps = activeProfile.steps.filter((step) => step.id !== selectedStep.id);
+    patchSteps(nextSteps);
+    if (nextSteps.length === 0) return;
+    const nextIndex = Math.max(0, Math.min(currentIndex, nextSteps.length - 1));
+    setSelectedId(nextSteps[nextIndex].id);
+  };
+
+  const samplePixelFromClickStep = async (clickStepId: string) => {
+    if (!samplingPixelStepId) return;
+    const clickStep = activeProfile.steps.find((step) => step.id === clickStepId && step.type === "click");
+    if (!clickStep) return;
+    try {
+      const sample = await api.pixel(clickStep.x, clickStep.y);
+      const targetPixelStepId = samplingPixelStepId;
+      setSettings((current) => {
+        const next = {
+          ...current,
+          profiles: current.profiles.map((profile) =>
+            profile.id === current.active_profile_id
+              ? {
+                  ...profile,
+                  steps: profile.steps.map((step) =>
+                    step.id === targetPixelStepId && step.type === "pixel_check"
+                      ? { ...step, x: clickStep.x, y: clickStep.y, expected_rgb: sample.rgb }
+                      : step
+                  )
+                }
+              : profile
+          )
+        };
+        settingsRef.current = next;
+        return next;
+      });
+      setSamplingPixelStepId("");
+      setLog((items) => [`Copied click coordinates ${clickStep.x}, ${clickStep.y} and sampled ${sample.rgb.join(", ")}.`, ...items]);
+    } catch (error) {
+      setLog((items) => [`Pixel sample failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
     }
   };
 
@@ -480,15 +546,18 @@ export function useAppController() {
 
   return {
     addStep,
+    deleteSelectedStep,
     activeProfile,
     confirmSaveProfile,
     emergencyStop,
     focusEmergency,
+    focusKeybind,
     loadDialogOpen,
     loadProfile,
     log,
     openEmergencySettings,
     openProfilesFolder,
+    openRunHotkeySettings,
     patchProfile,
     patchSelected,
     patchSettings,
@@ -503,6 +572,7 @@ export function useAppController() {
     runToggle,
     samplingPixelStepId,
     samplePixel,
+    samplePixelFromClickStep,
     saveDialogOpen,
     selectedProfileFile,
     selectedStep,
@@ -516,6 +586,7 @@ export function useAppController() {
     settingsOpen,
     state,
     setFocusEmergency,
+    setFocusKeybind,
     setMode,
     patchSteps,
     pickClickPosition

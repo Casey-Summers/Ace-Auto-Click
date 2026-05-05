@@ -53,6 +53,14 @@ export const defaultSettings: AppSettings = {
   active_profile_id: defaultProfile.id,
   mode: "advanced",
   theme: "dark",
+  action_icon_colors: {
+    click: "#55B3FF",
+    wait: "#55B3FF",
+    pixel_check: "#55B3FF",
+    key_tap: "#55B3FF",
+    loop_start: "#55B3FF",
+    loop_end: "#55B3FF"
+  },
   simple: {
     action_type: "mouse",
     action_value: "left",

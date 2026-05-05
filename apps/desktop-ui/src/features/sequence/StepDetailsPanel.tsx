@@ -1,4 +1,4 @@
-import { Info } from "lucide-react";
+import { Info, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { CollapsibleSection } from "../../components/CollapsibleSection";
 import { Button } from "../../components/ui/button";
@@ -89,7 +89,6 @@ function PixelMatchPreview({ live, expected, tolerance }: { live: Rgb | null; ex
           </div>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">Tolerance: {tolerance}</p>
     </div>
   );
 }
@@ -116,16 +115,17 @@ export function NormalDetailsPanel({ normal, onChange }: { normal: NormalProfile
   );
 }
 
-export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPosition, pixelLiveRgb, samplingPixel, onChange, onSamplePixel, onPickClickPosition }: { step?: ActionStep; pickCursorPosition?: Point | null; pickingClickPosition?: boolean; pixelLiveRgb?: Rgb | null; samplingPixel?: boolean; onChange: (patch: Partial<ActionStep>) => void; onSamplePixel: () => void; onPickClickPosition: () => void; }) {
+export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPosition, pixelLiveRgb, samplingPixel, onChange, onSamplePixel, onPickClickPosition, onDelete }: { step?: ActionStep; pickCursorPosition?: Point | null; pickingClickPosition?: boolean; pixelLiveRgb?: Rgb | null; samplingPixel?: boolean; onChange: (patch: Partial<ActionStep>) => void; onSamplePixel: () => void; onPickClickPosition: () => void; onDelete: () => void; }) {
   if (!step) return <CollapsibleSection title="Action Settings" defaultOpen><p className="text-sm text-muted-foreground">Select an action to edit settings.</p></CollapsibleSection>;
   return (
     <CollapsibleSection title="Action Settings" className="flex min-h-0 flex-1 flex-col overflow-hidden" contentClassName="min-h-0 flex-1 overflow-hidden">
       <div className="flex max-h-full min-h-0 flex-col gap-4">
-        <div className="action-settings-scroll grid min-h-0 flex-1 gap-4 overflow-y-auto pr-2">
+        <div className="action-settings-scroll grid min-h-0 flex-1 gap-4 overflow-y-auto px-1 pr-3">
           <FieldRow title="Step Status" info="Disabled steps stay in sequence but are skipped while running.">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
               <Button variant={step.enabled ? "success" : "ghost"} onClick={() => onChange({ enabled: true })}>Enabled</Button>
               <Button variant={!step.enabled ? "danger" : "ghost"} onClick={() => onChange({ enabled: false })}>Disabled</Button>
+              <Button variant="danger" size="icon" title="Delete action" aria-label="Delete action" onClick={onDelete}><Trash2 size={18} /></Button>
             </div>
           </FieldRow>
 
@@ -137,6 +137,8 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
             </FieldRow>
           ) : null}
 
+          {step.type === "pixel_check" ? <><FieldRow title="Pixel Sampler" info="Arms pixel sampling; next click captures current color at that location."><Button variant={samplingPixel ? "success" : "default"} onClick={onSamplePixel} disabled={samplingPixel}>{samplingPixel ? "Waiting for pixel sample" : "Sample Pixel"}</Button></FieldRow><FieldRow title="Mismatch Mode" info="Action to take when color does not match."><Select value={step.mode} onChange={(event) => onChange({ mode: event.target.value as "wait_until_match" | "stop_if_mismatch" | "skip_if_mismatch" })}><option value="wait_until_match">wait until match</option><option value="stop_if_mismatch">stop if mismatch</option><option value="skip_if_mismatch">skip if mismatch</option></Select></FieldRow></> : null}
+
           <FieldRow title="Repeat Count" info="Number of times this step repeats before the next step."><Input type="number" value={step.repeats} onChange={(event) => onChange({ repeats: Number(event.target.value) })} /></FieldRow>
           <FieldRow title="Base Delay (ms)" info="Delay after each execution of this step."><Input type="number" value={step.interval_ms} onChange={(event) => onChange({ interval_ms: Number(event.target.value) })} /></FieldRow>
           <FieldRow title="Random Delay (ms)" info="Random delay added after each execution."><Input type="number" value={step.randomness_ms} onChange={(event) => onChange({ randomness_ms: Number(event.target.value) })} /></FieldRow>
@@ -145,7 +147,7 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
 
           {step.type === "wait" ? <><FieldRow title="Wait Duration (ms)" info="Primary wait duration for this step."><Input type="number" value={step.ms} onChange={(event) => onChange({ ms: Number(event.target.value) })} /></FieldRow><FieldRow title="Random Wait (ms)" info="Additional random wait duration."><Input type="number" value={step.random_ms} onChange={(event) => onChange({ random_ms: Number(event.target.value) })} /></FieldRow></> : null}
 
-          {step.type === "pixel_check" ? <><FieldRow title="Pixel Sampler" info="Arms pixel sampling; next click captures current color at that location."><Button variant={samplingPixel ? "success" : "default"} onClick={onSamplePixel} disabled={samplingPixel}>{samplingPixel ? "Waiting for pixel sample" : "Sample Pixel"}</Button></FieldRow><FieldRow title="Mismatch Mode" info="Action to take when color does not match."><Select value={step.mode} onChange={(event) => onChange({ mode: event.target.value as "wait_until_match" | "stop_if_mismatch" | "skip_if_mismatch" })}><option value="wait_until_match">wait until match</option><option value="stop_if_mismatch">stop if mismatch</option><option value="skip_if_mismatch">skip if mismatch</option></Select></FieldRow><FieldRow title="Expected Color" info="Expected RGB value at the target pixel."><div className="flex items-center gap-2"><div className="h-8 w-12 rounded-md border border-border" style={{ backgroundColor: `rgb(${step.expected_rgb.join(",")})` }} /><span className="font-mono text-xs text-muted-foreground">{step.expected_rgb.join(", ")}</span></div></FieldRow><FieldRow title="Pixel X" info="Horizontal coordinate for sampling."><Input type="number" value={step.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></FieldRow><FieldRow title="Pixel Y" info="Vertical coordinate for sampling."><Input type="number" value={step.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></FieldRow><FieldRow title="Tolerance" info="Allowed RGB distance from expected color."><Input type="number" value={step.tolerance} onChange={(event) => onChange({ tolerance: Number(event.target.value) })} /></FieldRow></> : null}
+          {step.type === "pixel_check" ? <FieldRow title="Tolerance" info="Allowed RGB distance from expected color."><Input type="number" value={step.tolerance} onChange={(event) => onChange({ tolerance: Number(event.target.value) })} /></FieldRow> : null}
 
           {step.type === "key_tap" ? <FieldRow title="Key" info="Keyboard key to tap."><Input value={step.key} onChange={(event) => onChange({ key: event.target.value })} /></FieldRow> : null}
 

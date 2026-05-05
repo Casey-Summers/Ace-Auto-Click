@@ -15,18 +15,17 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Infinity, RadioTower, Square, SquareMinus, SquarePlus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CollapsibleSection } from "../../components/CollapsibleSection";
-import { Keycap } from "../../components/keycap";
+import { SplitHotkeyActionButton } from "../../components/SplitHotkeyActionButton";
 import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { stepIcon } from "../../lib/steps";
 import type { ActionStep, LoopStartStep, Rgb } from "../../lib/types";
 
 type LoopRange = { startIndex: number; endIndex: number; depth: number };
 type RowItem = { index: number; depth: number; collapsedSummary?: RowSummary };
-type RowSummary = { title: string; subtext: string };
+type RowSummary = { title: string; subtext: string; pixelComparison?: { current: Rgb | null; expected: Rgb; matches: boolean } };
 type Timing = { baseMs: number; randomMs: number };
 
 function estimateStepTiming(step: ActionStep): Timing {
@@ -74,7 +73,11 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
     const matches = selected && selectedPixelLiveRgb
       ? Math.max(...selectedPixelLiveRgb.map((value, index) => Math.abs(value - step.expected_rgb[index]))) <= step.tolerance
       : false;
-    return { title: `Pixel Match: ${current} ${matches ? "=" : "!="} ${expected}`, subtext: `${repeat} / ${delay} / ${step.mode.replace(/_/g, " ")} / ${timing}` };
+    return {
+      title: "Pixel Match",
+      subtext: `${repeat} / ${delay} / ${step.mode.replace(/_/g, " ")} / ${timing}`,
+      pixelComparison: { current: selected && selectedPixelLiveRgb ? selectedPixelLiveRgb : null, expected: step.expected_rgb, matches }
+    };
   }
   if (step.type === "key_tap") return { title: `Tap ${step.key}`, subtext: `${repeat} / ${delay} / ${timing}` };
   if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop start infinite" : `Loop start ${step.loop_count}x`, subtext: `${repeat} / ${delay} / ${timing}` };
@@ -160,12 +163,13 @@ function moveBlock(steps: ActionStep[], fromIndex: number, toIndex: number, rang
   return next;
 }
 
-function SortableRow({ row, step, selected, selectedPixelLiveRgb, onSelect, onToggleCollapse }: { row: RowItem; step: ActionStep; selected: boolean; selectedPixelLiveRgb?: Rgb | null; onSelect: () => void; onToggleCollapse: (step: LoopStartStep) => void; }) {
+function SortableRow({ row, step, selected, selectedPixelLiveRgb, pixelSamplingAssist, onSelect, onToggleCollapse }: { row: RowItem; step: ActionStep; selected: boolean; selectedPixelLiveRgb?: Rgb | null; pixelSamplingAssist?: boolean; onSelect: () => void; onToggleCollapse: (step: LoopStartStep) => void; }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id });
   const summary = row.collapsedSummary ?? rowSummary(step, selectedPixelLiveRgb, selected);
   return (
-    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, marginLeft: `${row.depth * 16}px`, width: `calc(100% - ${row.depth * 16}px)` }} className={isDragging ? "opacity-60" : ""}>
-      <div className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${selected ? "border-info/45 bg-info/10" : "border-border bg-background/60 hover:bg-surface-strong"} ${step.enabled ? "" : "opacity-45"}`} onClick={onSelect}>
+    <div ref={setNodeRef} data-step-id={step.id} style={{ transform: CSS.Transform.toString(transform), transition, marginLeft: `${row.depth * 20}px`, width: `calc(100% - ${row.depth * 20}px)` }} className={isDragging ? "opacity-60" : ""}>
+      <div className={`relative flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${selected ? "border-info/45 bg-info/10" : "border-border bg-background/60 hover:bg-surface-strong"} ${step.enabled ? "" : "opacity-45"} ${pixelSamplingAssist ? "border-warning/75 bg-warning/10 shadow-[0_0_0_1px_hsl(var(--warning)/0.5)]" : ""}`} onClick={onSelect}>
+        {row.depth > 0 ? <span className="absolute -left-3 top-0 h-full w-px bg-border/70" /> : null}
         <div className="flex min-w-0 items-center gap-3">
           <button type="button" className="rounded p-1 text-muted-foreground hover:bg-background/50 hover:text-foreground" title="Drag step" {...attributes} {...listeners}>
             <GripVertical size={14} />
@@ -175,10 +179,19 @@ function SortableRow({ row, step, selected, selectedPixelLiveRgb, onSelect, onTo
               {step.collapsed ? <SquarePlus size={18} /> : <SquareMinus size={18} />}
             </button>
           ) : (
-            <span className="text-info [&>svg]:h-[20px] [&>svg]:w-[20px]">{stepIcon(step.type)}</span>
+            <span className="step-icon [&>svg]:h-[20px] [&>svg]:w-[20px]" data-step-type={step.type}>{stepIcon(step.type)}</span>
           )}
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold">{summary.title}</div>
+            <div className="flex items-center gap-2 truncate text-sm font-semibold">
+              <span className="truncate">{summary.title}</span>
+              {summary.pixelComparison ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-3 w-3 rounded-sm border border-border" style={{ backgroundColor: summary.pixelComparison.current ? `rgb(${summary.pixelComparison.current.join(",")})` : "transparent" }} />
+                  <span className="text-xs">{summary.pixelComparison.matches ? "=" : "!="}</span>
+                  <span className="h-3 w-3 rounded-sm border border-border" style={{ backgroundColor: `rgb(${summary.pixelComparison.expected.join(",")})` }} />
+                </span>
+              ) : null}
+            </div>
             <div className="truncate font-mono text-xs text-muted-foreground">{summary.subtext}</div>
           </div>
         </div>
@@ -190,7 +203,7 @@ function SortableRow({ row, step, selected, selectedPixelLiveRgb, onSelect, onTo
   );
 }
 
-export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, runHotkey, selectedId, selectedPixelLiveRgb, onSelect, onLoopsChange, onRunToggle, onStepsChange }: { steps: ActionStep[]; loops: number; loopsCount: number; loopsInfinite: boolean; running: boolean; runHotkey: string; selectedId: string; selectedPixelLiveRgb?: Rgb | null; onSelect: (id: string) => void; onLoopsChange: (count: number, infinite: boolean) => void; onRunToggle: () => void; onStepsChange: (steps: ActionStep[]) => void; }) {
+export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, runHotkey, selectedId, selectedPixelLiveRgb, samplingPixelStepId, executingStepId, onSelect, onLoopsChange, onRunToggle, onStepsChange, onSamplePixelFromClickStep, onRunHotkeyClick }: { steps: ActionStep[]; loops: number; loopsCount: number; loopsInfinite: boolean; running: boolean; runHotkey: string; selectedId: string; selectedPixelLiveRgb?: Rgb | null; samplingPixelStepId?: string; executingStepId?: string | null; onSelect: (id: string) => void; onLoopsChange: (count: number, infinite: boolean) => void; onRunToggle: () => void; onStepsChange: (steps: ActionStep[]) => void; onSamplePixelFromClickStep?: (clickStepId: string) => void; onRunHotkeyClick: () => void; }) {
   const [loopDraft, setLoopDraft] = useState(String(loopsCount));
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -199,6 +212,18 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
   const ranges = useMemo(() => resolveLoops(steps), [steps]);
   const rows = useMemo(() => buildRows(steps, ranges), [steps, ranges]);
   const rowIds = rows.map((row) => steps[row.index].id);
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!running || !listRef.current) return;
+    if (!executingStepId) {
+      listRef.current.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    const row = listRef.current.querySelector(`[data-step-id="${executingStepId}"]`) as HTMLElement | null;
+    if (!row) return;
+    row.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [running, executingStepId]);
 
   const onDragEnd = (event: DragEndEvent) => {
     if (!event.over || event.active.id === event.over.id) return;
@@ -213,13 +238,21 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
   };
 
   return (
-    <CollapsibleSection title="Sequence Builder" icon={<RadioTower size={16} />} actions={<div className="flex items-center gap-2"><label className="flex items-center gap-2 text-xs text-muted-foreground">Loops<div className="relative"><Input className="h-8 w-24 pr-8" type="number" min={1} value={loopsInfinite ? "" : loopDraft} disabled={loopsInfinite} onChange={(event) => { const nextValue = event.target.value; setLoopDraft(nextValue); const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 1) onLoopsChange(Math.floor(parsed), false); }} onBlur={() => { const parsed = Number(loopDraft); if (Number.isFinite(parsed) && parsed >= 1) { const safe = Math.floor(parsed); onLoopsChange(safe, false); setLoopDraft(String(safe)); } else { setLoopDraft(String(loopsCount)); } }} /><button className={`absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 ${loopsInfinite ? "text-accent" : "text-muted-foreground hover:text-foreground"}`} onClick={() => onLoopsChange(loopsCount, !loopsInfinite)} title="Repeat indefinitely" type="button"><Infinity size={14} /></button></div></label><Button variant={running ? "danger" : "success"} onClick={onRunToggle}>{running ? <Square size={16} /> : <RadioTower size={16} />}{running ? "Stop sequence" : "Run sequence"}<Keycap>{runHotkey}</Keycap></Button></div>}>
+    <CollapsibleSection title="Sequence Builder" icon={<RadioTower size={16} />} actions={<div className="flex items-center gap-2"><label className="flex items-center gap-2 text-xs text-muted-foreground">Loops<div className="relative"><Input className="h-8 w-24 pr-8" type="number" min={1} value={loopsInfinite ? "" : loopDraft} disabled={loopsInfinite} onChange={(event) => { const nextValue = event.target.value; setLoopDraft(nextValue); const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 1) onLoopsChange(Math.floor(parsed), false); }} onBlur={() => { const parsed = Number(loopDraft); if (Number.isFinite(parsed) && parsed >= 1) { const safe = Math.floor(parsed); onLoopsChange(safe, false); setLoopDraft(String(safe)); } else { setLoopDraft(String(loopsCount)); } }} /><button className={`absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 ${loopsInfinite ? "text-accent" : "text-muted-foreground hover:text-foreground"}`} onClick={() => onLoopsChange(loopsCount, !loopsInfinite)} title="Repeat indefinitely" type="button"><Infinity size={14} /></button></div></label><SplitHotkeyActionButton tone={running ? "danger" : "success"} icon={running ? <Square size={16} /> : <RadioTower size={16} />} label={running ? "Stop sequence" : "Run sequence"} hotkey={runHotkey} onAction={onRunToggle} onHotkey={running ? onRunToggle : onRunHotkeyClick} /></div>}>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
-          <div className="grid gap-2">
+          <div ref={listRef} className="grid max-h-[58vh] gap-2 overflow-y-auto pr-1">
             {rows.map((row) => {
               const step = steps[row.index];
-              return <SortableRow key={step.id} row={row} step={step} selected={step.id === selectedId} selectedPixelLiveRgb={selectedPixelLiveRgb} onSelect={() => onSelect(step.id)} onToggleCollapse={toggleCollapse} />;
+              const pixelSamplingAssist = Boolean(samplingPixelStepId) && step.type === "click";
+              const executing = executingStepId === step.id;
+              return <SortableRow key={step.id} row={row} step={step} selected={executing || step.id === selectedId} selectedPixelLiveRgb={selectedPixelLiveRgb} pixelSamplingAssist={pixelSamplingAssist} onSelect={() => {
+                if (pixelSamplingAssist && onSamplePixelFromClickStep) {
+                  void onSamplePixelFromClickStep(step.id);
+                  return;
+                }
+                onSelect(step.id);
+              }} onToggleCollapse={toggleCollapse} />;
             })}
           </div>
         </SortableContext>

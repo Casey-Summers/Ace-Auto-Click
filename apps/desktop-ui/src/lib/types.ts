@@ -4,6 +4,7 @@ export type RuntimeState = {
   recording: boolean;
   status: string;
   last_error: string | null;
+  current_step_id?: string | null;
 };
 
 export type Point = {
@@ -69,6 +70,7 @@ export type AppSettings = {
   mode: AppMode;
   simple: SimpleSettings;
   theme: "dark" | "light";
+  action_icon_colors?: Partial<Record<"click" | "wait" | "pixel_check" | "key_tap" | "loop_start" | "loop_end", string>>;
   profiles: AutomationProfile[];
 };
 

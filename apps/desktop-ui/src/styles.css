@@ -18,6 +18,12 @@
   --danger: 0 100% 69%;
   --muted: 220 5% 11%;
   --muted-foreground: 240 1% 62%;
+  --icon-click: #55b3ff;
+  --icon-wait: #55b3ff;
+  --icon-pixel: #55b3ff;
+  --icon-key: #55b3ff;
+  --icon-loop-start: #55b3ff;
+  --icon-loop-end: #55b3ff;
 }
 
 .light {
@@ -62,4 +68,43 @@ select {
 
 .action-settings-scroll {
   scrollbar-gutter: stable;
+  padding-right: 0.5rem;
 }
+
+.action-settings-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+
+.action-settings-scroll::-webkit-scrollbar-track {
+  background: hsl(var(--surface));
+  border-radius: 8px;
+}
+
+.action-settings-scroll::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.5);
+  border: 2px solid hsl(var(--surface));
+  border-radius: 8px;
+}
+
+.action-settings-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--info) / 0.65);
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  opacity: 1;
+  background-color: hsl(var(--background));
+  border-left: 1px solid hsl(var(--border));
+  filter: hue-rotate(170deg) saturate(1.1) brightness(0.95);
+}
+
+input[type="number"] {
+  scrollbar-color: hsl(var(--muted-foreground) / 0.5) hsl(var(--surface));
+}
+
+.step-icon[data-step-type="click"] { color: var(--icon-click); }
+.step-icon[data-step-type="wait"] { color: var(--icon-wait); }
+.step-icon[data-step-type="pixel_check"] { color: var(--icon-pixel); }
+.step-icon[data-step-type="key_tap"] { color: var(--icon-key); }
+.step-icon[data-step-type="loop_start"] { color: var(--icon-loop-start); }
+.step-icon[data-step-type="loop_end"] { color: var(--icon-loop-end); }
