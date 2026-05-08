@@ -69,28 +69,38 @@ function CursorPreview({ cursor, target }: { cursor: Point | null; target: Point
 }
 
 function PixelMatchPreview({ live, expected, tolerance }: { live: Rgb | null; expected: Rgb; tolerance: number }) {
-  const withinTolerance = live ? Math.max(...live.map((value, index) => Math.abs(value - expected[index]))) <= tolerance : false;
+  const delta = live ? Math.max(...live.map((value, index) => Math.abs(value - expected[index]))) : null;
+  const withinTolerance = delta !== null ? delta <= tolerance : false;
+  const status = live === null ? "No sample" : withinTolerance ? "Match" : "Outside tolerance";
+  const statusTone = status === "Match" ? "bg-success/20 text-success" : status === "Outside tolerance" ? "bg-warning/20 text-warning" : "bg-muted text-muted-foreground";
   return (
     <div className="grid gap-3">
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
         <div className="rounded-md bg-background/70 p-2">
           <div className="text-xs text-muted-foreground">Current</div>
-          <div className="mt-1 flex items-center gap-2">
-            <span className="h-4 w-4 rounded border border-border" style={{ backgroundColor: live ? `rgb(${live.join(",")})` : "transparent" }} />
-            <span className="font-mono text-xs">{live ? live.join(", ") : "n/a"}</span>
-          </div>
+          <div className="mt-1 h-12 rounded border border-border" style={{ backgroundColor: live ? `rgb(${live.join(",")})` : "transparent" }} />
+          <div className="mt-1 font-mono text-xs">{live ? `RGB ${live.join(", ")}` : "RGB n/a"}</div>
         </div>
-        <div className="font-mono text-lg">{withinTolerance ? "=" : "!="}</div>
+        <div className={`rounded px-2 py-1 text-xs font-semibold ${statusTone}`}>{status}</div>
         <div className="rounded-md bg-background/70 p-2">
           <div className="text-xs text-muted-foreground">Expected</div>
-          <div className="mt-1 flex items-center gap-2">
-            <span className="h-4 w-4 rounded border border-border" style={{ backgroundColor: `rgb(${expected.join(",")})` }} />
-            <span className="font-mono text-xs">{expected.join(", ")}</span>
-          </div>
+          <div className="mt-1 h-12 rounded border border-border" style={{ backgroundColor: `rgb(${expected.join(",")})` }} />
+          <div className="mt-1 font-mono text-xs">{`RGB ${expected.join(", ")}`}</div>
         </div>
       </div>
+      <p className="text-xs text-muted-foreground">{delta === null ? "Tolerance hint: sample pixel to compare channel delta." : `Tolerance hint: max channel delta ${delta} (allowed ${tolerance}).`}</p>
     </div>
   );
+}
+
+function CoordinatePreview({ x, y, offset }: { x: number; y: number; offset: number }) {
+  return <p className="text-xs text-muted-foreground">Target: <span className="font-mono">{x}, {y}</span>{offset > 0 ? ` with ±${offset}px randomness` : ""}.</p>;
+}
+
+function TimingPreview({ baseMs, randomMs, repeats }: { baseMs: number; randomMs: number; repeats: number }) {
+  const total = Math.max(0, baseMs) * Math.max(1, repeats);
+  const jitter = Math.max(0, randomMs) * Math.max(1, repeats);
+  return <p className="text-xs text-muted-foreground">Timing: <span className="font-mono">{total}ms</span>{jitter > 0 ? <> + up to <span className="font-mono">{jitter}ms</span> random</> : null} per step cycle.</p>;
 }
 
 export function NormalDetailsPanel({ normal, onChange }: { normal: NormalProfileSettings; onChange: (patch: Partial<NormalProfileSettings>) => void; }) {
@@ -116,7 +126,7 @@ export function NormalDetailsPanel({ normal, onChange }: { normal: NormalProfile
 }
 
 export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPosition, pixelLiveRgb, samplingPixel, onChange, onSamplePixel, onPickClickPosition, onDelete }: { step?: ActionStep; pickCursorPosition?: Point | null; pickingClickPosition?: boolean; pixelLiveRgb?: Rgb | null; samplingPixel?: boolean; onChange: (patch: Partial<ActionStep>) => void; onSamplePixel: () => void; onPickClickPosition: () => void; onDelete: () => void; }) {
-  if (!step) return <CollapsibleSection title="Action Settings" defaultOpen><p className="text-sm text-muted-foreground">Select an action to edit settings.</p></CollapsibleSection>;
+  if (!step) return <CollapsibleSection title="Action Settings" defaultOpen><p className="text-sm text-muted-foreground">Select an action to edit settings, or add one from Action Library.</p></CollapsibleSection>;
   return (
     <CollapsibleSection title="Action Settings" className="flex min-h-0 flex-1 flex-col overflow-hidden" contentClassName="min-h-0 flex-1 overflow-hidden">
       <div className="flex max-h-full min-h-0 flex-col gap-4">
@@ -143,15 +153,15 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
           <FieldRow title="Base Delay (ms)" info="Delay after each execution of this step."><Input type="number" value={step.interval_ms} onChange={(event) => onChange({ interval_ms: Number(event.target.value) })} /></FieldRow>
           <FieldRow title="Random Delay (ms)" info="Random delay added after each execution."><Input type="number" value={step.randomness_ms} onChange={(event) => onChange({ randomness_ms: Number(event.target.value) })} /></FieldRow>
 
-          {step.type === "click" ? <><FieldRow title="Mouse X" info="Horizontal screen coordinate."><Input type="number" value={step.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></FieldRow><FieldRow title="Mouse Y" info="Vertical screen coordinate."><Input type="number" value={step.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></FieldRow><FieldRow title="Button" info="Mouse button to click."><Select value={step.button} onChange={(event) => onChange({ button: event.target.value as "left" | "right" | "middle" })}><option value="left">left</option><option value="right">right</option><option value="middle">middle</option></Select></FieldRow><FieldRow title="Clicks" info="Number of click presses per step run."><Input type="number" value={step.clicks} onChange={(event) => onChange({ clicks: Number(event.target.value) })} /></FieldRow><FieldRow title="Position Randomness (px)" info="Random offset around target point."><Input type="number" value={step.random_offset} onChange={(event) => onChange({ random_offset: Number(event.target.value) })} /></FieldRow></> : null}
+          {step.type === "click" ? <><FieldRow title="Mouse X" info="Horizontal screen coordinate."><Input type="number" value={step.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></FieldRow><FieldRow title="Mouse Y" info="Vertical screen coordinate."><Input type="number" value={step.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></FieldRow><FieldRow title="Button" info="Mouse button to click."><Select value={step.button} onChange={(event) => onChange({ button: event.target.value as "left" | "right" | "middle" })}><option value="left">left</option><option value="right">right</option><option value="middle">middle</option></Select></FieldRow><FieldRow title="Clicks" info="Number of click presses per step run."><Input type="number" value={step.clicks} onChange={(event) => onChange({ clicks: Number(event.target.value) })} /></FieldRow><FieldRow title="Position Randomness (px)" info="Random offset around target point."><Input type="number" value={step.random_offset} onChange={(event) => onChange({ random_offset: Number(event.target.value) })} /></FieldRow><CoordinatePreview x={step.x} y={step.y} offset={step.random_offset} /></> : null}
 
-          {step.type === "wait" ? <><FieldRow title="Wait Duration (ms)" info="Primary wait duration for this step."><Input type="number" value={step.ms} onChange={(event) => onChange({ ms: Number(event.target.value) })} /></FieldRow><FieldRow title="Random Wait (ms)" info="Additional random wait duration."><Input type="number" value={step.random_ms} onChange={(event) => onChange({ random_ms: Number(event.target.value) })} /></FieldRow></> : null}
+          {step.type === "wait" ? <><FieldRow title="Wait Duration (ms)" info="Primary wait duration for this step."><Input type="number" value={step.ms} onChange={(event) => onChange({ ms: Number(event.target.value) })} /></FieldRow><FieldRow title="Random Wait (ms)" info="Additional random wait duration."><Input type="number" value={step.random_ms} onChange={(event) => onChange({ random_ms: Number(event.target.value) })} /></FieldRow><TimingPreview baseMs={step.ms + step.interval_ms} randomMs={step.random_ms + step.randomness_ms} repeats={step.repeats} /></> : null}
 
           {step.type === "pixel_check" ? <FieldRow title="Tolerance" info="Allowed RGB distance from expected color."><Input type="number" value={step.tolerance} onChange={(event) => onChange({ tolerance: Number(event.target.value) })} /></FieldRow> : null}
 
-          {step.type === "key_tap" ? <FieldRow title="Key" info="Keyboard key to tap."><Input value={step.key} onChange={(event) => onChange({ key: event.target.value })} /></FieldRow> : null}
+          {step.type === "key_tap" ? <><FieldRow title="Key" info="Keyboard key to tap."><Input value={step.key} onChange={(event) => onChange({ key: event.target.value })} /></FieldRow><p className="text-xs text-muted-foreground">Key preview: <kbd className="rounded border border-border bg-background/70 px-1.5 py-0.5 font-mono text-xs">{step.key || "unset"}</kbd></p></> : null}
 
-          {step.type === "loop_start" ? <><FieldRow title="Loop Count" info="Number of loop iterations when not infinite."><Input type="number" value={step.loop_count} disabled={step.loop_infinite} onChange={(event) => onChange({ loop_count: Math.max(1, Number(event.target.value) || 1) })} /></FieldRow><FieldRow title="Infinite Loop" info="Run loop body indefinitely until stopped."><label className="flex items-center justify-between rounded-lg bg-background/70 p-2 text-sm">Enable<input type="checkbox" checked={step.loop_infinite} onChange={(event) => onChange({ loop_infinite: event.target.checked })} /></label></FieldRow></> : null}
+          {step.type === "loop_start" ? <><FieldRow title="Loop Count" info="Number of loop iterations when not infinite."><Input type="number" value={step.loop_count} disabled={step.loop_infinite} onChange={(event) => onChange({ loop_count: Math.max(1, Number(event.target.value) || 1) })} /></FieldRow><FieldRow title="Infinite Loop" info="Run loop body indefinitely until stopped."><label className="flex items-center justify-between rounded-lg bg-background/70 p-2 text-sm">Enable<input type="checkbox" checked={step.loop_infinite} onChange={(event) => onChange({ loop_infinite: event.target.checked })} /></label></FieldRow><p className="text-xs text-muted-foreground">Loop summary: {step.loop_infinite ? "Infinite iterations until stopped." : `${step.loop_count} iterations.`}</p></> : null}
         </div>
 
         <ActionDetailsSection active={Boolean((step.type === "click" && pickingClickPosition) || step.type === "pixel_check")}>

@@ -235,7 +235,11 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
   useEffect(() => {
     if (!running || !listRef.current) return;
     if (!executingStepId) {
-      listRef.current.scrollTo({ top: 0, behavior: "smooth" });
+      if (typeof listRef.current.scrollTo === "function") {
+        listRef.current.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        listRef.current.scrollTop = 0;
+      }
       return;
     }
     const row = listRef.current.querySelector(`[data-step-id="${executingStepId}"]`) as HTMLElement | null;
