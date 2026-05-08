@@ -157,17 +157,18 @@ export function App() {
       onChange={(normalPatch) => patchProfile({ normal: { ...activeProfile.normal, ...normalPatch } })}
     />
   ) : (
-    <StepDetailsPanel
-      step={selectedStep}
+      <StepDetailsPanel
+        step={selectedStep}
       pickCursorPosition={pickCursorPosition}
       pickingClickPosition={selectedStep?.id === pickingClickStepId}
       pixelLiveRgb={pixelLiveRgb}
       samplingPixel={selectedStep?.id === samplingPixelStepId}
       onChange={patchSelected}
-      onSamplePixel={samplePixel}
-      onPickClickPosition={pickClickPosition}
-      onDelete={controller.deleteSelectedStep}
-    />
+        onSamplePixel={samplePixel}
+        onPickClickPosition={pickClickPosition}
+        onDuplicate={controller.duplicateSelectedStep}
+        onDelete={controller.deleteSelectedStep}
+      />
   );
 
   return (

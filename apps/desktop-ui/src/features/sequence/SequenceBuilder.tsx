@@ -55,20 +55,39 @@ function formatEstimate(timing: Timing): string {
 }
 
 function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selected = false): RowSummary {
-  const timing = formatEstimate(estimateStepTiming(step));
-  const repeat = step.repeats > 1 ? `repeats ${step.repeats}` : "repeats 1";
-  const delay = `delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` ±${formatMs(step.randomness_ms)}` : ""}`;
-  if (step.type === "click") return { title: `Click ${step.button} at ${step.x}, ${step.y}`, subtext: `${repeat} / ${delay} / clicks ${step.clicks}${step.random_offset > 0 ? ` / position ±${step.random_offset}px` : ""} / ${timing}` };
-  if (step.type === "wait") return { title: `Wait ${formatMs(step.ms)}${step.random_ms > 0 ? ` ±${formatMs(step.random_ms)}` : ""}`, subtext: `${repeat} / ${delay} / ${timing}` };
+  if (step.type === "click") {
+    const parts: string[] = [];
+    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    if (step.clicks !== 1) parts.push(`clicks ${step.clicks}`);
+    if (step.random_offset > 0) parts.push(`position +- ${step.random_offset}px`);
+    return { title: `Click ${step.button} at ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
+  }
+  if (step.type === "wait") {
+    const parts: string[] = [];
+    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    if (step.random_ms !== 0) parts.push(`wait jitter +- ${formatMs(step.random_ms)}`);
+    return { title: `Wait ${formatMs(step.ms)}${step.random_ms > 0 ? ` +- ${formatMs(step.random_ms)}` : ""}`, subtext: parts.join(" / ") };
+  }
   if (step.type === "pixel_check") {
     const matches = selected && selectedPixelLiveRgb ? Math.max(...selectedPixelLiveRgb.map((value, index) => Math.abs(value - step.expected_rgb[index]))) <= step.tolerance : false;
-    return { title: "Pixel Match", subtext: `${repeat} / ${delay} / ${step.mode.replace(/_/g, " ")} / ${timing}`, pixelComparison: { current: selected && selectedPixelLiveRgb ? selectedPixelLiveRgb : null, expected: step.expected_rgb, matches } };
+    const parts: string[] = [];
+    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    if (step.mode !== "wait_until_match") parts.push(step.mode.replace(/_/g, " "));
+    if (step.tolerance !== 10) parts.push(`tol ${step.tolerance}`);
+    return { title: "Pixel Match", subtext: parts.join(" / "), pixelComparison: { current: selected && selectedPixelLiveRgb ? selectedPixelLiveRgb : null, expected: step.expected_rgb, matches } };
   }
-  if (step.type === "key_tap") return { title: `Tap ${step.key}`, subtext: `${repeat} / ${delay} / ${timing}` };
-  if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop start infinite" : `Loop start ${step.loop_count}x`, subtext: `${repeat} / ${delay} / ${timing}` };
-  return { title: "Loop end", subtext: `${repeat} / ${delay} / ${timing}` };
+  if (step.type === "key_tap") {
+    const parts: string[] = [];
+    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    return { title: `Tap ${step.key}`, subtext: parts.join(" / ") };
+  }
+  if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop start infinite" : `Loop start ${step.loop_count}x`, subtext: "" };
+  return { title: "Loop end", subtext: "" };
 }
-
 function resolveLoops(steps: ActionStep[]): Map<string, LoopRange> {
   const stack: Array<{ loopId: string; index: number; depth: number }> = [];
   const ranges = new Map<string, LoopRange>();
@@ -114,9 +133,7 @@ function buildRows(steps: ActionStep[], ranges: Map<string, LoopRange>): RowItem
       const range = ranges.get(step.loop_id);
       if (range) {
         const children = steps.slice(range.startIndex + 1, range.endIndex);
-        const cycle = sumTiming(children);
-        const multiplier = step.loop_infinite ? 1 : Math.max(1, step.loop_count);
-        collapsedSummary = { title: step.loop_infinite ? `Loop infinite - ${children.length} steps` : `Loop ${step.loop_count}x - ${children.length} steps`, subtext: `repeats ${step.repeats} / delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` ±${formatMs(step.randomness_ms)}` : ""} / ${formatEstimate({ baseMs: cycle.baseMs * multiplier, randomMs: cycle.randomMs * multiplier })}` };
+        collapsedSummary = { title: step.loop_infinite ? `Loop infinite - ${children.length} steps` : `Loop ${step.loop_count}x - ${children.length} steps`, subtext: "" };
       }
     }
     rows.push({ index, indentPct: computeIndentPct(index, ranges), collapsedSummary });
@@ -179,7 +196,7 @@ function SortableRow({ row, step, selected, stateTone, flashTone, heldTone, sele
               <span className="truncate">{summary.title}</span>
               {summary.pixelComparison ? <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border border-border" style={{ backgroundColor: summary.pixelComparison.current ? `rgb(${summary.pixelComparison.current.join(",")})` : "transparent" }} /><span className="text-xs">{summary.pixelComparison.matches ? "=" : "!="}</span><span className="h-3 w-3 rounded-sm border border-border" style={{ backgroundColor: `rgb(${summary.pixelComparison.expected.join(",")})` }} /></span> : null}
             </div>
-            <div className="truncate font-mono text-xs text-muted-foreground">{summary.subtext}</div>
+            {summary.subtext ? <div className="truncate font-mono text-xs text-muted-foreground">{summary.subtext}</div> : null}
           </div>
         </div>
         <div className="ml-3 flex shrink-0 items-center gap-2"><Badge>{String(row.index + 1).padStart(2, "0")}</Badge></div>
@@ -195,6 +212,11 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
   const [rowGeometry, setRowGeometry] = useState<Map<string, RowGeometry>>(new Map());
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const ranges = useMemo(() => resolveLoops(steps), [steps]);
+  const totalEstimate = useMemo(() => {
+    const base = sumTiming(steps).baseMs;
+    const loops = loopsInfinite ? 1 : Math.max(1, loopsCount);
+    return formatMs(base * loops);
+  }, [steps, loopsCount, loopsInfinite]);
   const rows = useMemo(() => buildRows(steps, ranges), [steps, ranges]);
   const rowIds = rows.map((row) => steps[row.index].id);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -340,7 +362,7 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
   const toggleCollapse = (rowStep: LoopStartStep) => onStepsChange(steps.map((step) => (step.id === rowStep.id ? { ...step, collapsed: !rowStep.collapsed } : step)));
 
   return (
-    <CollapsibleSection className="sequence-builder-shell flex h-full min-h-0 flex-col" contentClassName="min-h-0 flex-1" title="Sequence Builder" icon={<RadioTower size={16} />} actions={<div className="flex items-center gap-2"><label className="flex items-center gap-2 text-xs text-muted-foreground">Loops<div className="relative"><Input className="h-8 w-24 pr-8" type="number" min={1} value={loopsInfinite ? "" : loopDraft} disabled={loopsInfinite} onChange={(event) => { const nextValue = event.target.value; setLoopDraft(nextValue); const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 1) onLoopsChange(Math.floor(parsed), false); }} onBlur={() => { const parsed = Number(loopDraft); if (Number.isFinite(parsed) && parsed >= 1) { const safe = Math.floor(parsed); onLoopsChange(safe, false); setLoopDraft(String(safe)); } else setLoopDraft(String(loopsCount)); }} /><button className={`absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 ${loopsInfinite ? "text-accent" : "text-muted-foreground hover:text-foreground"}`} onClick={() => onLoopsChange(loopsCount, !loopsInfinite)} title="Repeat indefinitely" type="button"><Infinity size={14} /></button></div></label><SplitHotkeyActionButton tone={running ? "danger" : "success"} icon={running ? <Square size={16} /> : <RadioTower size={16} />} label={running ? "Stop sequence" : "Run sequence"} hotkey={runHotkey} onAction={onRunToggle} onHotkey={running ? onRunToggle : onRunHotkeyClick} /></div>}>
+    <CollapsibleSection className="sequence-builder-shell flex h-full min-h-0 flex-col" contentClassName="min-h-0 flex-1" title="Sequence Builder" icon={<RadioTower size={16} />} actions={<div className="flex items-center gap-2"><div className="grid gap-1"><label className="flex items-center gap-2 text-xs text-muted-foreground">Loops<div className="relative"><Input className="h-8 w-24 pr-8" type="number" min={1} value={loopsInfinite ? "" : loopDraft} disabled={loopsInfinite} onChange={(event) => { const nextValue = event.target.value; setLoopDraft(nextValue); const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 1) onLoopsChange(Math.floor(parsed), false); }} onBlur={() => { const parsed = Number(loopDraft); if (Number.isFinite(parsed) && parsed >= 1) { const safe = Math.floor(parsed); onLoopsChange(safe, false); setLoopDraft(String(safe)); } else setLoopDraft(String(loopsCount)); }} /><button className={`absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 ${loopsInfinite ? "text-accent" : "text-muted-foreground hover:text-foreground"}`} onClick={() => onLoopsChange(loopsCount, !loopsInfinite)} title="Repeat indefinitely" type="button"><Infinity size={14} /></button></div></label><div className="text-xs text-muted-foreground">Approx total: <span className="font-mono">{totalEstimate}</span></div></div><SplitHotkeyActionButton tone={running ? "danger" : "success"} icon={running ? <Square size={16} /> : <RadioTower size={16} />} label={running ? "Stop sequence" : "Run sequence"} hotkey={runHotkey} onAction={onRunToggle} onHotkey={running ? onRunToggle : onRunHotkeyClick} /></div>}>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
           <div ref={listRef} className="relative flex h-full min-h-0 flex-col gap-2 overflow-y-auto pr-1">

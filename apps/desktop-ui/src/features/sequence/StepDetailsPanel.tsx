@@ -1,4 +1,4 @@
-import { Info, Trash2 } from "lucide-react";
+import { Copy, Info, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { CollapsibleSection } from "../../components/CollapsibleSection";
 import { Button } from "../../components/ui/button";
@@ -19,11 +19,14 @@ function FieldRow({ title, info, children }: { title: string; info: string; chil
   );
 }
 
-function ActionDetailsSection({ active, children }: { active: boolean; children: ReactNode }) {
+function ActionDetailsSection({ active, statusBadge, children }: { active: boolean; statusBadge?: ReactNode; children: ReactNode }) {
   if (!active) return null;
   return (
-    <section className="grid gap-3 rounded-lg border border-info/20 bg-info/5 p-3">
-      <h3 className="text-sm font-semibold text-foreground">Action Details</h3>
+    <section className="grid gap-2 rounded-lg border border-info/20 bg-info/5 p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-foreground">Action Details</h3>
+        {statusBadge}
+      </div>
       {children}
     </section>
   );
@@ -68,27 +71,26 @@ function CursorPreview({ cursor, target }: { cursor: Point | null; target: Point
   );
 }
 
-function PixelMatchPreview({ live, expected, tolerance }: { live: Rgb | null; expected: Rgb; tolerance: number }) {
+function PixelMatchPreview({ live, expected }: { live: Rgb | null; expected: Rgb }) {
   const delta = live ? Math.max(...live.map((value, index) => Math.abs(value - expected[index]))) : null;
-  const withinTolerance = delta !== null ? delta <= tolerance : false;
+  const withinTolerance = delta !== null ? delta <= 10 : false;
   const status = live === null ? "No sample" : withinTolerance ? "Match" : "Outside tolerance";
   const statusTone = status === "Match" ? "bg-success/20 text-success" : status === "Outside tolerance" ? "bg-warning/20 text-warning" : "bg-muted text-muted-foreground";
   return (
-    <div className="grid gap-3">
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-        <div className="rounded-md bg-background/70 p-2">
+    <div className="grid gap-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-md bg-background/70 p-2 min-w-0">
           <div className="text-xs text-muted-foreground">Current</div>
           <div className="mt-1 h-12 rounded border border-border" style={{ backgroundColor: live ? `rgb(${live.join(",")})` : "transparent" }} />
-          <div className="mt-1 font-mono text-xs">{live ? `RGB ${live.join(", ")}` : "RGB n/a"}</div>
+          <div className="mt-1 font-mono text-xs min-h-[2.4em] break-words">{live ? `RGB ${live.join(", ")}` : "RGB n/a"}</div>
         </div>
-        <div className={`rounded px-2 py-1 text-xs font-semibold ${statusTone}`}>{status}</div>
-        <div className="rounded-md bg-background/70 p-2">
+        <div className="rounded-md bg-background/70 p-2 min-w-0">
           <div className="text-xs text-muted-foreground">Expected</div>
           <div className="mt-1 h-12 rounded border border-border" style={{ backgroundColor: `rgb(${expected.join(",")})` }} />
-          <div className="mt-1 font-mono text-xs">{`RGB ${expected.join(", ")}`}</div>
+          <div className="mt-1 font-mono text-xs min-h-[2.4em] break-words">{`RGB ${expected.join(", ")}`}</div>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">{delta === null ? "Tolerance hint: sample pixel to compare channel delta." : `Tolerance hint: max channel delta ${delta} (allowed ${tolerance}).`}</p>
+      <div className={`justify-self-end rounded px-2 py-1 text-xs font-semibold ${statusTone}`}>{status}</div>
     </div>
   );
 }
@@ -125,17 +127,18 @@ export function NormalDetailsPanel({ normal, onChange }: { normal: NormalProfile
   );
 }
 
-export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPosition, pixelLiveRgb, samplingPixel, onChange, onSamplePixel, onPickClickPosition, onDelete }: { step?: ActionStep; pickCursorPosition?: Point | null; pickingClickPosition?: boolean; pixelLiveRgb?: Rgb | null; samplingPixel?: boolean; onChange: (patch: Partial<ActionStep>) => void; onSamplePixel: () => void; onPickClickPosition: () => void; onDelete: () => void; }) {
+export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPosition, pixelLiveRgb, samplingPixel, onChange, onSamplePixel, onPickClickPosition, onDuplicate, onDelete }: { step?: ActionStep; pickCursorPosition?: Point | null; pickingClickPosition?: boolean; pixelLiveRgb?: Rgb | null; samplingPixel?: boolean; onChange: (patch: Partial<ActionStep>) => void; onSamplePixel: () => void; onPickClickPosition: () => void; onDuplicate: () => void; onDelete: () => void; }) {
   if (!step) return <CollapsibleSection title="Action Settings" defaultOpen><p className="text-sm text-muted-foreground">Select an action to edit settings, or add one from Action Library.</p></CollapsibleSection>;
   return (
     <CollapsibleSection title="Action Settings" className="flex min-h-0 flex-1 flex-col overflow-hidden" contentClassName="min-h-0 flex-1 overflow-hidden">
       <div className="flex max-h-full min-h-0 flex-col gap-4">
         <div className="action-settings-scroll grid min-h-0 flex-1 gap-4 overflow-y-auto px-1 pr-3">
           <FieldRow title="Step Status" info="Disabled steps stay in sequence but are skipped while running.">
-            <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-              <Button variant={step.enabled ? "success" : "ghost"} onClick={() => onChange({ enabled: true })}>Enabled</Button>
-              <Button variant={!step.enabled ? "danger" : "ghost"} onClick={() => onChange({ enabled: false })}>Disabled</Button>
-              <Button variant="danger" size="icon" title="Delete action" aria-label="Delete action" onClick={onDelete}><Trash2 size={18} /></Button>
+            <div className="grid grid-cols-[2fr_2fr_1fr_1fr] gap-2">
+              <Button className="w-full" variant={step.enabled ? "success" : "ghost"} onClick={() => onChange({ enabled: true })}>Enabled</Button>
+              <Button className="w-full" variant={!step.enabled ? "danger" : "ghost"} onClick={() => onChange({ enabled: false })}>Disabled</Button>
+              <Button className="w-full" variant="ghost" size="icon" title="Duplicate action" aria-label="Duplicate action" onClick={onDuplicate}><Copy size={18} /></Button>
+              <Button className="w-full" variant="danger" size="icon" title="Delete action" aria-label="Delete action" onClick={onDelete}><Trash2 size={18} /></Button>
             </div>
           </FieldRow>
 
@@ -164,9 +167,16 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
           {step.type === "loop_start" ? <><FieldRow title="Loop Count" info="Number of loop iterations when not infinite."><Input type="number" value={step.loop_count} disabled={step.loop_infinite} onChange={(event) => onChange({ loop_count: Math.max(1, Number(event.target.value) || 1) })} /></FieldRow><FieldRow title="Infinite Loop" info="Run loop body indefinitely until stopped."><label className="flex items-center justify-between rounded-lg bg-background/70 p-2 text-sm">Enable<input type="checkbox" checked={step.loop_infinite} onChange={(event) => onChange({ loop_infinite: event.target.checked })} /></label></FieldRow><p className="text-xs text-muted-foreground">Loop summary: {step.loop_infinite ? "Infinite iterations until stopped." : `${step.loop_count} iterations.`}</p></> : null}
         </div>
 
-        <ActionDetailsSection active={Boolean((step.type === "click" && pickingClickPosition) || step.type === "pixel_check")}>
+        <ActionDetailsSection
+          active={Boolean((step.type === "click" && pickingClickPosition) || step.type === "pixel_check")}
+          statusBadge={step.type === "pixel_check" ? (
+            <span className="text-xs text-muted-foreground">
+              Sample Status: {pixelLiveRgb === null ? "No sample" : "Sampled"}
+            </span>
+          ) : undefined}
+        >
           {step.type === "click" ? <CursorPreview cursor={pickCursorPosition ?? null} target={{ x: step.x, y: step.y }} /> : null}
-          {step.type === "pixel_check" ? <PixelMatchPreview live={pixelLiveRgb ?? null} expected={step.expected_rgb} tolerance={step.tolerance} /> : null}
+          {step.type === "pixel_check" ? <PixelMatchPreview live={pixelLiveRgb ?? null} expected={step.expected_rgb} /> : null}
         </ActionDetailsSection>
       </div>
     </CollapsibleSection>

@@ -463,6 +463,20 @@ export function useAppController() {
     setSelectedId(nextSteps[nextIndex].id);
   };
 
+  const duplicateSelectedStep = () => {
+    if (!selectedStep) return;
+    const currentIndex = activeProfile.steps.findIndex((step) => step.id === selectedStep.id);
+    if (currentIndex < 0) return;
+    const duplicated = {
+      ...selectedStep,
+      id: `${selectedStep.id}-copy-${Date.now()}`
+    } as ActionStep;
+    const nextSteps = [...activeProfile.steps];
+    nextSteps.splice(currentIndex + 1, 0, duplicated);
+    patchSteps(nextSteps);
+    setSelectedId(duplicated.id);
+  };
+
   const samplePixelFromClickStep = async (clickStepId: string) => {
     if (!samplingPixelStepId) return;
     const clickStep = activeProfile.steps.find((step): step is Extract<ActionStep, { type: "click" }> => step.id === clickStepId && step.type === "click");
@@ -562,6 +576,7 @@ export function useAppController() {
 
   return {
     addStep,
+    duplicateSelectedStep,
     deleteSelectedStep,
     activeProfile,
     confirmSaveProfile,
