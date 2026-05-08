@@ -19,13 +19,13 @@ function FieldRow({ title, info, children }: { title: string; info: string; chil
   );
 }
 
-function ActionDetailsSection({ active, statusBadge, children }: { active: boolean; statusBadge?: ReactNode; children: ReactNode }) {
+function ActionDetailsSection({ active, rightContent, children }: { active: boolean; rightContent?: ReactNode; children: ReactNode }) {
   if (!active) return null;
   return (
     <section className="grid gap-2 rounded-lg border border-info/20 bg-info/5 p-2.5">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-foreground">Action Details</h3>
-        {statusBadge}
+        {rightContent}
       </div>
       {children}
     </section>
@@ -72,10 +72,6 @@ function CursorPreview({ cursor, target }: { cursor: Point | null; target: Point
 }
 
 function PixelMatchPreview({ live, expected }: { live: Rgb | null; expected: Rgb }) {
-  const delta = live ? Math.max(...live.map((value, index) => Math.abs(value - expected[index]))) : null;
-  const withinTolerance = delta !== null ? delta <= 10 : false;
-  const status = live === null ? "No sample" : withinTolerance ? "Match" : "Outside tolerance";
-  const statusTone = status === "Match" ? "bg-success/20 text-success" : status === "Outside tolerance" ? "bg-warning/20 text-warning" : "bg-muted text-muted-foreground";
   return (
     <div className="grid gap-2">
       <div className="grid grid-cols-2 gap-2">
@@ -90,13 +86,12 @@ function PixelMatchPreview({ live, expected }: { live: Rgb | null; expected: Rgb
           <div className="mt-1 font-mono text-xs min-h-[2.4em] break-words">{`RGB ${expected.join(", ")}`}</div>
         </div>
       </div>
-      <div className={`justify-self-end rounded px-2 py-1 text-xs font-semibold ${statusTone}`}>{status}</div>
     </div>
   );
 }
 
 function CoordinatePreview({ x, y, offset }: { x: number; y: number; offset: number }) {
-  return <p className="text-xs text-muted-foreground">Target: <span className="font-mono">{x}, {y}</span>{offset > 0 ? ` with ±${offset}px randomness` : ""}.</p>;
+  return <p className="text-xs text-muted-foreground">Target: <span className="font-mono">{x}, {y}</span>{offset > 0 ? ` with +- ${offset}px randomness` : ""}.</p>;
 }
 
 function TimingPreview({ baseMs, randomMs, repeats }: { baseMs: number; randomMs: number; repeats: number }) {
@@ -169,11 +164,13 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
 
         <ActionDetailsSection
           active={Boolean((step.type === "click" && pickingClickPosition) || step.type === "pixel_check")}
-          statusBadge={step.type === "pixel_check" ? (
-            <span className="text-xs text-muted-foreground">
-              Sample Status: {pixelLiveRgb === null ? "No sample" : "Sampled"}
-            </span>
-          ) : undefined}
+          rightContent={step.type === "pixel_check" ? (() => {
+            const delta = pixelLiveRgb ? Math.max(...pixelLiveRgb.map((value, index) => Math.abs(value - step.expected_rgb[index]))) : null;
+            const withinTolerance = delta !== null && delta <= step.tolerance;
+            const status = pixelLiveRgb === null ? "Outside Tolerance" : withinTolerance ? "Within Tolerance" : "Outside Tolerance";
+            const statusTone = status === "Within Tolerance" ? "border-success/70 bg-success/15 text-success" : "border-warning/70 bg-warning/15 text-warning";
+            return <div className={`rounded border px-2 py-1 text-xs font-semibold ${statusTone}`}>{status}</div>;
+          })() : undefined}
         >
           {step.type === "click" ? <CursorPreview cursor={pickCursorPosition ?? null} target={{ x: step.x, y: step.y }} /> : null}
           {step.type === "pixel_check" ? <PixelMatchPreview live={pixelLiveRgb ?? null} expected={step.expected_rgb} /> : null}

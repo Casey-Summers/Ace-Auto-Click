@@ -482,7 +482,19 @@ export function useAppController() {
     const clickStep = activeProfile.steps.find((step): step is Extract<ActionStep, { type: "click" }> => step.id === clickStepId && step.type === "click");
     if (!clickStep) return;
     try {
-      const sample = await api.pixel(clickStep.x, clickStep.y);
+      // If the standard pixel capture flow is still running, cancel it so it
+      // cannot later overwrite this click-coordinate sample.
+      const activeSessionId = captureSessionId.current;
+      if (activeSessionId) {
+        captureSessionId.current = "";
+        api.cancelInputCapture(activeSessionId).catch(() => undefined);
+      }
+
+      // Important: sampling from a click step must use that step's stored coordinates,
+      // never the live mouse cursor position.
+      const sourceX = clickStep.x;
+      const sourceY = clickStep.y;
+      const sample = await api.pixel(sourceX, sourceY);
       const targetPixelStepId = samplingPixelStepId;
       setSettings((current) => {
         const next = {
@@ -493,7 +505,7 @@ export function useAppController() {
                   ...profile,
                   steps: profile.steps.map((step) =>
                     step.id === targetPixelStepId && step.type === "pixel_check"
-                      ? { ...step, x: clickStep.x, y: clickStep.y, expected_rgb: sample.rgb }
+                      ? { ...step, x: sourceX, y: sourceY, expected_rgb: sample.rgb }
                       : step
                   )
                 }
@@ -504,7 +516,7 @@ export function useAppController() {
         return next;
       });
       setSamplingPixelStepId("");
-      setLog((items) => [`Copied click coordinates ${clickStep.x}, ${clickStep.y} and sampled ${sample.rgb.join(", ")}.`, ...items]);
+      setLog((items) => [`Copied click coordinates ${sourceX}, ${sourceY} and sampled ${sample.rgb.join(", ")}.`, ...items]);
     } catch (error) {
       setLog((items) => [`Pixel sample failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
     }
