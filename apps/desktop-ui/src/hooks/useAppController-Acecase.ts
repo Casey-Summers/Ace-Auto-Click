@@ -4,16 +4,19 @@ import { api } from "../lib/api";
 import { defaultProfile, defaultSettings } from "../lib/defaults";
 import { createStep } from "../lib/steps";
 import { defaultState, normalizeSettings } from "../lib/settings";
+import { loadStartupCache, saveStartupCache } from "../lib/startupCache";
 import type { ActionStep, AppMode, AppSettings, AutomationProfile, ExecutionEvent, Point, ProfileFile, Rgb, RuntimeState } from "../lib/types";
 
 export function useAppController() {
-  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
-  const [state, setState] = useState<RuntimeState>(defaultState);
+  const startupCache = useMemo(() => loadStartupCache(), []);
+  const [settings, setSettings] = useState<AppSettings>(() => startupCache?.settings ?? defaultSettings);
+  const [state, setState] = useState<RuntimeState>(() => startupCache?.state ?? defaultState);
+  const [backendAvailable, setBackendAvailable] = useState(false);
   const [selectedId, setSelectedId] = useState(defaultProfile.steps[0].id);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [focusEmergency, setFocusEmergency] = useState(false);
   const [focusKeybind, setFocusKeybind] = useState<"" | "run" | "emergency">("");
-  const [profileFiles, setProfileFiles] = useState<ProfileFile[]>([]);
+  const [profileFiles, setProfileFiles] = useState<ProfileFile[]>(() => startupCache?.profiles ?? []);
   const [selectedProfileFile, setSelectedProfileFile] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -26,7 +29,7 @@ export function useAppController() {
   const captureSessionId = useRef("");
   const settingsHydrated = useRef(false);
   const settingsRef = useRef(settings);
-  const [log, setLog] = useState<string[]>(["UI ready. Start the API with python app.py api."]);
+  const [log, setLog] = useState<string[]>([startupCache ? "Loaded cached workspace. Connecting to API..." : "UI ready. Connecting to API..."]);
   const [executionEvents, setExecutionEvents] = useState<ExecutionEvent[]>([]);
   const executionAfter = useRef(0);
 
@@ -49,6 +52,7 @@ export function useAppController() {
     try {
       const [nextProfileFiles] = await Promise.all([api.listProfiles(), api.profileStatus()]);
       setProfileFiles(nextProfileFiles);
+      saveStartupCache({ settings: settingsRef.current, state, profiles: nextProfileFiles });
       setProfileError("");
     } catch (error) {
       const message = error instanceof Error && /404|Not Found/i.test(error.message)
@@ -65,34 +69,44 @@ export function useAppController() {
 
   useEffect(() => {
     document.documentElement.classList.toggle("light", settings.theme === "light");
-    const colors = settings.icon_colors_profile_dependent
-      ? (activeProfile.action_icon_colors ?? settings.action_icon_colors ?? {})
-      : (settings.action_icon_colors ?? {});
+    const colors = settings.action_icon_colors ?? {};
     document.documentElement.style.setProperty("--icon-click", colors.click ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-wait", colors.wait ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-pixel", colors.pixel_check ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-key", colors.key_tap ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-loop-start", colors.loop_start ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-loop-end", colors.loop_end ?? "#55B3FF");
-  }, [settings.theme, settings.icon_colors_profile_dependent, settings.action_icon_colors, activeProfile.action_icon_colors]);
+  }, [settings.theme, settings.action_icon_colors]);
 
   useEffect(() => {
-    Promise.all([api.getSettings(), api.getState()])
-      .then(([nextSettings, nextState]) => {
-        setSettings(normalizeSettings(nextSettings));
-        setState(nextState);
+    api.bootstrap()
+      .then((bootstrap) => {
+        const nextSettings = normalizeSettings(bootstrap.settings);
+        setSettings(nextSettings);
+        settingsRef.current = nextSettings;
+        setProfileFiles(bootstrap.profiles);
+        setState(bootstrap.state);
+        setBackendAvailable(true);
         settingsHydrated.current = true;
-        setLog((items) => [`Connected to ${nextState.product_name}.`, ...items]);
+        saveStartupCache({ settings: nextSettings, state: bootstrap.state, profiles: bootstrap.profiles });
+        setLog((items) => [`Connected to ${bootstrap.state.product_name}.`, ...items]);
       })
-      .catch((error) => setLog((items) => [`API unavailable: ${error.message}`, ...items]));
-
-    void refreshProfiles();
+      .catch((error) => {
+        setBackendAvailable(false);
+        settingsHydrated.current = true;
+        setState((current) => ({ ...current, running: false, recording: false, status: "Disconnected", last_error: error.message }));
+        setLog((items) => [`API unavailable: ${error.message}`, ...items]);
+      });
   }, []);
 
   useEffect(() => {
+    if (!backendAvailable) return undefined;
     const intervalMs = state.running ? 120 : 1200;
     const timer = window.setInterval(() => {
-      api.getState().then(setState).catch(() => undefined);
+      api.getState().then((nextState) => {
+        setState(nextState);
+        setBackendAvailable(true);
+      }).catch(() => setBackendAvailable(false));
       api.executionEvents(executionAfter.current).then((events) => {
         if (!events.length) return;
         executionAfter.current = Math.max(executionAfter.current, ...events.map((event) => event.sequence_no));
@@ -100,7 +114,7 @@ export function useAppController() {
       }).catch(() => undefined);
     }, intervalMs);
     return () => window.clearInterval(timer);
-  }, [state.running]);
+  }, [backendAvailable, state.running]);
 
   useEffect(() => {
     if (!pickingClickStepId && !samplingPixelStepId) {
@@ -168,28 +182,33 @@ export function useAppController() {
   }, [activeProfile.steps, pickingClickStepId, samplingPixelStepId, selectedStep, settings.mode]);
 
   useEffect(() => {
-    if (!settingsHydrated.current) return undefined;
+    if (!settingsHydrated.current || !backendAvailable) return undefined;
     const timer = window.setTimeout(() => {
       api.saveSettings(settings).catch((error) => {
+        setBackendAvailable(false);
         setProfileError("Background keybind sync failed. Restart the app backend.");
         setLog((items) => [`Settings sync failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
       });
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [settings]);
+  }, [backendAvailable, settings]);
+
+  useEffect(() => {
+    saveStartupCache({ settings, state, profiles: profileFiles });
+  }, [profileFiles, settings, state]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
       if (key === settings.emergency_stop_hotkey.toLowerCase()) {
         event.preventDefault();
-        if (state.running) {
+        if (backendAvailable && state.running) {
           void emergencyStop();
         } else {
           openEmergencySettings();
         }
       }
-      if (key === settings.run_toggle_hotkey.toLowerCase()) {
+      if (backendAvailable && key === settings.run_toggle_hotkey.toLowerCase()) {
         event.preventDefault();
         void runToggle();
       }
@@ -291,6 +310,10 @@ export function useAppController() {
   };
 
   const confirmSaveProfile = async () => {
+    if (!backendAvailable) {
+      setProfileError("Backend unavailable. Profile save will be available after the API connects.");
+      return;
+    }
     setProfileSaving(true);
     setProfileError("");
     try {
@@ -311,6 +334,10 @@ export function useAppController() {
 
   const loadProfile = async () => {
     if (!selectedProfileFile) return;
+    if (!backendAvailable) {
+      setProfileError("Backend unavailable. Profile load will be available after the API connects.");
+      return;
+    }
     setProfileError("");
     try {
       const next = normalizeSettings(await api.loadProfile(selectedProfileFile));
@@ -324,6 +351,10 @@ export function useAppController() {
   };
 
   const openProfilesFolder = async () => {
+    if (!backendAvailable) {
+      setProfileError("Backend unavailable. Profiles folder opens after the API connects.");
+      return;
+    }
     try {
       await api.openProfilesFolder();
       await refreshProfiles();
@@ -334,6 +365,7 @@ export function useAppController() {
   };
 
   const emergencyStop = async () => {
+    if (!backendAvailable) return;
     const result = await api.emergencyStop();
     setState(result.state);
     setLog((items) => ["Emergency stop triggered.", ...items]);
@@ -365,6 +397,7 @@ export function useAppController() {
   };
 
   const runToggle = async () => {
+    if (!backendAvailable) return;
     if (state.running) {
       await emergencyStop();
       return;
@@ -393,6 +426,10 @@ export function useAppController() {
   };
 
   const samplePixel = async () => {
+    if (!backendAvailable) {
+      setLog((items) => ["Backend unavailable. Pixel sampling will be available after the API connects.", ...items]);
+      return;
+    }
     if (!selectedStep || selectedStep.type !== "pixel_check") return;
     if (samplingPixelStepId) return;
     const stepId = selectedStep.id;
@@ -463,38 +500,13 @@ export function useAppController() {
     setSelectedId(nextSteps[nextIndex].id);
   };
 
-  const duplicateSelectedStep = () => {
-    if (!selectedStep) return;
-    const currentIndex = activeProfile.steps.findIndex((step) => step.id === selectedStep.id);
-    if (currentIndex < 0) return;
-    const duplicated = {
-      ...selectedStep,
-      id: `${selectedStep.id}-copy-${Date.now()}`
-    } as ActionStep;
-    const nextSteps = [...activeProfile.steps];
-    nextSteps.splice(currentIndex + 1, 0, duplicated);
-    patchSteps(nextSteps);
-    setSelectedId(duplicated.id);
-  };
-
   const samplePixelFromClickStep = async (clickStepId: string) => {
+    if (!backendAvailable) return;
     if (!samplingPixelStepId) return;
     const clickStep = activeProfile.steps.find((step): step is Extract<ActionStep, { type: "click" }> => step.id === clickStepId && step.type === "click");
     if (!clickStep) return;
     try {
-      // If the standard pixel capture flow is still running, cancel it so it
-      // cannot later overwrite this click-coordinate sample.
-      const activeSessionId = captureSessionId.current;
-      if (activeSessionId) {
-        captureSessionId.current = "";
-        api.cancelInputCapture(activeSessionId).catch(() => undefined);
-      }
-
-      // Important: sampling from a click step must use that step's stored coordinates,
-      // never the live mouse cursor position.
-      const sourceX = clickStep.x;
-      const sourceY = clickStep.y;
-      const sample = await api.pixel(sourceX, sourceY);
+      const sample = await api.pixel(clickStep.x, clickStep.y);
       const targetPixelStepId = samplingPixelStepId;
       setSettings((current) => {
         const next = {
@@ -505,7 +517,7 @@ export function useAppController() {
                   ...profile,
                   steps: profile.steps.map((step) =>
                     step.id === targetPixelStepId && step.type === "pixel_check"
-                      ? { ...step, x: sourceX, y: sourceY, expected_rgb: sample.rgb }
+                      ? { ...step, x: clickStep.x, y: clickStep.y, expected_rgb: sample.rgb }
                       : step
                   )
                 }
@@ -516,13 +528,17 @@ export function useAppController() {
         return next;
       });
       setSamplingPixelStepId("");
-      setLog((items) => [`Copied click coordinates ${sourceX}, ${sourceY} and sampled ${sample.rgb.join(", ")}.`, ...items]);
+      setLog((items) => [`Copied click coordinates ${clickStep.x}, ${clickStep.y} and sampled ${sample.rgb.join(", ")}.`, ...items]);
     } catch (error) {
       setLog((items) => [`Pixel sample failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
     }
   };
 
   const pickClickPosition = async () => {
+    if (!backendAvailable) {
+      setLog((items) => ["Backend unavailable. Position picking will be available after the API connects.", ...items]);
+      return;
+    }
     if (!selectedStep || selectedStep.type !== "click") return;
     if (pickingClickStepId) return;
     const stepId = selectedStep.id;
@@ -588,9 +604,9 @@ export function useAppController() {
 
   return {
     addStep,
-    duplicateSelectedStep,
     deleteSelectedStep,
     activeProfile,
+    backendAvailable,
     confirmSaveProfile,
     emergencyStop,
     focusEmergency,

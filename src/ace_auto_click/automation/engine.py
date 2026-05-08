@@ -4,6 +4,7 @@ import random
 import threading
 import time
 from dataclasses import dataclass
+from collections import deque
 from typing import Any, Callable, Dict, List, Optional
 
 import pyautogui
@@ -30,6 +31,14 @@ class ClickSettings:
     random_offset_px: int = 0
 
 
+@dataclass
+class SequenceTimelineNode:
+    row_step_id: str
+    step_type: str
+    phase_kind: str
+    action: ActionStep | None = None
+
+
 class ClickEngine:
     def __init__(self, on_status: Optional[StatusCb] = None) -> None:
         self._on_status = on_status or (lambda _: None)
@@ -38,6 +47,33 @@ class ClickEngine:
 
         self._mouse_ctl = mouse.Controller()
         self._kb_ctl = keyboard.Controller()
+        self.current_step_id: str | None = None
+        self.current_step_state: str | None = None
+        self._execution_events: deque[dict[str, Any]] = deque(maxlen=512)
+        self._execution_seq = 0
+        self._execution_run_id = 0
+        self._execution_lock = threading.Lock()
+
+    def emit_execution_event(self, step_id: str, step_type: str, phase: str) -> None:
+        with self._execution_lock:
+            self._execution_seq += 1
+            self._execution_events.append({
+                "step_id": step_id,
+                "step_type": step_type,
+                "phase": phase,
+                "run_id": self._execution_run_id,
+                "sequence_no": self._execution_seq,
+                "ts_ms": int(time.time() * 1000),
+            })
+
+    def _begin_execution_run(self) -> int:
+        with self._execution_lock:
+            self._execution_run_id += 1
+            return self._execution_run_id
+
+    def get_execution_events(self, after: int = 0) -> list[dict[str, Any]]:
+        with self._execution_lock:
+            return [event for event in self._execution_events if int(event["sequence_no"]) > after]
 
     def is_running(self) -> bool:
         return self._active_thread is not None and self._active_thread.is_alive()
@@ -109,6 +145,7 @@ class ClickEngine:
             return
 
         def run() -> None:
+            self._begin_execution_run()
             self._stop_evt.clear()
             self._on_status("Advanced Mode: ON")
             try:
@@ -119,7 +156,8 @@ class ClickEngine:
                     for step in steps:
                         if self._stop_evt.is_set():
                             break
-
+                        self.current_step_id = step.id
+                        self.current_step_state = "running"
                         cont = step.execute(self)
                         if not cont:
                             # Step logic requested stop
@@ -136,6 +174,50 @@ class ClickEngine:
             except Exception as e:
                 self._on_status(f"Error: {e}")
             finally:
+                self.current_step_id = None
+                self.current_step_state = None
+                self._on_status("Advanced Mode: OFF")
+                self._active_thread = None
+
+        self._active_thread = threading.Thread(target=run, daemon=True)
+        self._active_thread.start()
+
+    def start_sequence_timeline(self, timeline: List[SequenceTimelineNode], loops: int = 1) -> None:
+        if self.is_running():
+            return
+
+        def run() -> None:
+            self._begin_execution_run()
+            self._stop_evt.clear()
+            self._on_status("Advanced Mode: ON")
+            try:
+                loop_count = 0
+                while (loops == 0 or loop_count < loops) and not self._stop_evt.is_set():
+                    for node in timeline:
+                        if self._stop_evt.is_set():
+                            break
+                        self.current_step_id = node.row_step_id
+                        self.current_step_state = "waiting" if node.phase_kind == "step_wait" else "running"
+                        if node.phase_kind != "execute":
+                            self.emit_execution_event(node.row_step_id, node.step_type, node.phase_kind)
+                            continue
+                        if node.action is None or not node.action.enabled:
+                            continue
+                        cont = node.action.execute(self)
+                        if not cont:
+                            break
+
+                    loop_count += 1
+                    if loops == 0:
+                        self._on_status(f"Advanced Mode: Running (Loop {loop_count})")
+                    else:
+                        self._on_status(f"Advanced Mode: Running ({loop_count}/{loops})")
+
+            except Exception as e:
+                self._on_status(f"Error: {e}")
+            finally:
+                self.current_step_id = None
+                self.current_step_state = None
                 self._on_status("Advanced Mode: OFF")
                 self._active_thread = None
 

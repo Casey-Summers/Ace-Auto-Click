@@ -49,6 +49,13 @@ export type ProfileDirectoryStatus = {
   file_count: number;
 };
 
+export type BootstrapData = {
+  settings: AppSettings;
+  state: RuntimeState;
+  profiles: ProfileFile[];
+  profile_status: ProfileDirectoryStatus;
+};
+
 export type SimpleSettings = {
   action_type: "mouse" | "keyboard";
   action_value: string;

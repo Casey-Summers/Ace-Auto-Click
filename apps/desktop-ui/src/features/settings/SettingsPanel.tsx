@@ -42,6 +42,7 @@ export function SettingsModal({
   activeProfile,
   running,
   focusEmergency,
+  focusKeybind,
   onSettingsChange,
   onProfileChange,
   onClose
@@ -50,11 +51,13 @@ export function SettingsModal({
   activeProfile: AutomationProfile;
   running: boolean;
   focusEmergency: boolean;
+  focusKeybind: "" | "run" | "emergency";
   onSettingsChange: (patch: Partial<AppSettings>) => void;
   onProfileChange: (patch: Partial<AutomationProfile>) => void;
   onClose: () => void;
 }) {
   const [category, setCategory] = useState<Category>(focusEmergency ? "keybinds" : "general");
+  const [flashKeybind, setFlashKeybind] = useState<"" | "run" | "emergency">(focusKeybind);
   const firstButtonRef = useRef<HTMLButtonElement>(null);
   const reservedRun = useMemo(() => [settings.emergency_stop_hotkey], [settings.emergency_stop_hotkey]);
   const reservedEmergency = useMemo(() => [settings.run_toggle_hotkey], [settings.run_toggle_hotkey]);
@@ -67,6 +70,14 @@ export function SettingsModal({
   useEffect(() => {
     if (focusEmergency) setCategory("keybinds");
   }, [focusEmergency]);
+
+  useEffect(() => {
+    if (!focusKeybind) return;
+    setCategory("keybinds");
+    setFlashKeybind(focusKeybind);
+    const timer = window.setTimeout(() => setFlashKeybind(""), 1200);
+    return () => window.clearTimeout(timer);
+  }, [focusKeybind]);
 
   return (
     <ModalFrame
@@ -119,6 +130,60 @@ export function SettingsModal({
                     <option value="advanced">Advanced</option>
                   </Select>
                 </SettingRow>
+                <SettingRow label="Action icon colors" description="Customize icon colors by action type.">
+                  <div className="mb-2">
+                    <label className="flex items-center gap-3 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(settings.icon_colors_profile_dependent)}
+                        onChange={(event) => onSettingsChange({ icon_colors_profile_dependent: event.target.checked })}
+                      />
+                      Profile-specific colors (off = global colors)
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      ["click", "Click"],
+                      ["wait", "Wait"],
+                      ["pixel_check", "Pixel Match"],
+                      ["key_tap", "Key tap"],
+                      ["loop_start", "Loop start"],
+                      ["loop_end", "Loop end"]
+                    ].map(([key, label]) => (
+                      <label key={key} className="flex items-center justify-between rounded-md border border-border bg-background/60 px-2 py-1 text-xs">
+                        <span>{label}</span>
+                        <input
+                          type="color"
+                          value={
+                            (
+                              (settings.icon_colors_profile_dependent
+                                ? activeProfile.action_icon_colors?.[key as keyof NonNullable<AppSettings["action_icon_colors"]>]
+                                : settings.action_icon_colors?.[key as keyof NonNullable<AppSettings["action_icon_colors"]>]
+                              ) ?? "#55b3ff"
+                            )
+                          }
+                          onChange={(event) => {
+                            if (settings.icon_colors_profile_dependent) {
+                              onProfileChange({
+                                action_icon_colors: {
+                                  ...(activeProfile.action_icon_colors ?? {}),
+                                  [key]: event.target.value
+                                }
+                              });
+                              return;
+                            }
+                            onSettingsChange({
+                              action_icon_colors: {
+                                ...(settings.action_icon_colors ?? {}),
+                                [key]: event.target.value
+                              }
+                            });
+                          }}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </SettingRow>
               </div>
             ) : null}
 
@@ -139,6 +204,7 @@ export function SettingsModal({
 
             {category === "keybinds" ? (
               <div className="grid gap-3">
+                <div className={cn("rounded-lg transition", flashKeybind === "run" ? "ring-2 ring-info/55" : "")}>
                 <SettingRow label="Run sequence toggle" description="Captured reactively; click the field, then press the new key.">
                   <KeybindField
                     label="Run sequence toggle"
@@ -148,6 +214,8 @@ export function SettingsModal({
                     onChange={(run_toggle_hotkey) => onSettingsChange({ run_toggle_hotkey })}
                   />
                 </SettingRow>
+                </div>
+                <div className={cn("rounded-lg transition", flashKeybind === "emergency" ? "ring-2 ring-danger/55" : "")}>
                 <SettingRow label="Emergency stop" description="Global backend listener uses this key while the API is running.">
                   <KeybindField
                     label="Emergency stop"
@@ -157,6 +225,7 @@ export function SettingsModal({
                     onChange={(emergency_stop_hotkey) => onSettingsChange({ emergency_stop_hotkey })}
                   />
                 </SettingRow>
+                </div>
                 {running ? <p className="text-xs text-warning">Keybinds are locked while automation is running.</p> : null}
               </div>
             ) : null}

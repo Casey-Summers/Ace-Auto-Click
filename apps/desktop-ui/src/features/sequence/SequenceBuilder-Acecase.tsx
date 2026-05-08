@@ -14,7 +14,7 @@ import {
   verticalListSortingStrategy
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronDown, ChevronRight, GripVertical, Infinity, RadioTower, RotateCcw, RotateCw, Square } from "lucide-react";
+import { GripVertical, Infinity, RadioTower, Square, SquareMinus, SquarePlus } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CollapsibleSection } from "../../components/CollapsibleSection";
 import { SplitHotkeyActionButton } from "../../components/SplitHotkeyActionButton";
@@ -49,39 +49,23 @@ function formatMs(ms: number): string {
   return `${(ms / 1000).toFixed(ms >= 10000 ? 0 : 1)}s`;
 }
 
+function formatEstimate(timing: Timing): string {
+  return `~${formatMs(timing.baseMs)}${timing.randomMs > 0 ? ` ±${formatMs(timing.randomMs)}` : ""}`;
+}
+
 function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selected = false): RowSummary {
-  if (step.type === "click") {
-    const parts: string[] = [];
-    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    if (step.clicks !== 1) parts.push(`clicks ${step.clicks}`);
-    if (step.random_offset > 0) parts.push(`position +- ${step.random_offset}px`);
-    return { title: `Click ${step.button} at ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
-  }
-  if (step.type === "wait") {
-    const parts: string[] = [];
-    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    if (step.random_ms !== 0) parts.push(`wait jitter +- ${formatMs(step.random_ms)}`);
-    return { title: `Wait ${formatMs(step.ms)}${step.random_ms > 0 ? ` +- ${formatMs(step.random_ms)}` : ""}`, subtext: parts.join(" / ") };
-  }
+  const timing = formatEstimate(estimateStepTiming(step));
+  const repeat = step.repeats > 1 ? `repeats ${step.repeats}` : "repeats 1";
+  const delay = `delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` ±${formatMs(step.randomness_ms)}` : ""}`;
+  if (step.type === "click") return { title: `Click ${step.button} at ${step.x}, ${step.y}`, subtext: `${repeat} / ${delay} / clicks ${step.clicks}${step.random_offset > 0 ? ` / position ±${step.random_offset}px` : ""} / ${timing}` };
+  if (step.type === "wait") return { title: `Wait ${formatMs(step.ms)}${step.random_ms > 0 ? ` ±${formatMs(step.random_ms)}` : ""}`, subtext: `${repeat} / ${delay} / ${timing}` };
   if (step.type === "pixel_check") {
     const matches = selected && selectedPixelLiveRgb ? Math.max(...selectedPixelLiveRgb.map((value, index) => Math.abs(value - step.expected_rgb[index]))) <= step.tolerance : false;
-    const parts: string[] = [];
-    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    if (step.mode !== "wait_until_match") parts.push(step.mode.replace(/_/g, " "));
-    if (step.tolerance !== 10) parts.push(`tol ${step.tolerance}`);
-    return { title: "Pixel Match", subtext: parts.join(" / "), pixelComparison: { current: selected && selectedPixelLiveRgb ? selectedPixelLiveRgb : null, expected: step.expected_rgb, matches } };
+    return { title: "Pixel Match", subtext: `${repeat} / ${delay} / ${step.mode.replace(/_/g, " ")} / ${timing}`, pixelComparison: { current: selected && selectedPixelLiveRgb ? selectedPixelLiveRgb : null, expected: step.expected_rgb, matches } };
   }
-  if (step.type === "key_tap") {
-    const parts: string[] = [];
-    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    return { title: `Tap ${step.key}`, subtext: parts.join(" / ") };
-  }
-  if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop start infinite" : `Loop start ${step.loop_count}x`, subtext: "" };
-  return { title: "Loop end", subtext: "" };
+  if (step.type === "key_tap") return { title: `Tap ${step.key}`, subtext: `${repeat} / ${delay} / ${timing}` };
+  if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop start infinite" : `Loop start ${step.loop_count}x`, subtext: `${repeat} / ${delay} / ${timing}` };
+  return { title: "Loop end", subtext: `${repeat} / ${delay} / ${timing}` };
 }
 
 function resolveLoops(steps: ActionStep[]): Map<string, LoopRange> {
@@ -129,7 +113,9 @@ function buildRows(steps: ActionStep[], ranges: Map<string, LoopRange>): RowItem
       const range = ranges.get(step.loop_id);
       if (range) {
         const children = steps.slice(range.startIndex + 1, range.endIndex);
-        collapsedSummary = { title: step.loop_infinite ? `Loop infinite - ${children.length} steps` : `Loop ${step.loop_count}x - ${children.length} steps`, subtext: "" };
+        const cycle = sumTiming(children);
+        const multiplier = step.loop_infinite ? 1 : Math.max(1, step.loop_count);
+        collapsedSummary = { title: step.loop_infinite ? `Loop infinite - ${children.length} steps` : `Loop ${step.loop_count}x - ${children.length} steps`, subtext: `repeats ${step.repeats} / delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` ±${formatMs(step.randomness_ms)}` : ""} / ${formatEstimate({ baseMs: cycle.baseMs * multiplier, randomMs: cycle.randomMs * multiplier })}` };
       }
     }
     rows.push({ index, indentPct: computeIndentPct(index, ranges), collapsedSummary });
@@ -167,61 +153,29 @@ function SortableRow({ row, step, selected, stateTone, flashTone, heldTone, sele
         <div className="flex min-w-0 items-center gap-3">
           <button type="button" className="rounded p-1 text-muted-foreground hover:bg-background/50 hover:text-foreground" title="Drag step" {...attributes} {...listeners}><GripVertical size={14} /></button>
           {step.type === "loop_start"
-            ? (
-              <button
-                type="button"
-                className="step-icon inline-flex items-center justify-center rounded-md hover:bg-background/60 [&>svg]:h-[20px] [&>svg]:w-[20px]"
-                data-step-type="loop_start"
-                onClick={(event) => { event.stopPropagation(); onToggleCollapse(step); }}
-                title={step.collapsed ? "Expand loop" : "Collapse loop"}
-              >
-                <RotateCw size={20} />
-              </button>
-            )
-            : step.type === "loop_end"
-              ? <span className="step-icon [&>svg]:h-[20px] [&>svg]:w-[20px]" data-step-type={step.type}><RotateCcw size={20} /></span>
-              : <span className="step-icon [&>svg]:h-[20px] [&>svg]:w-[20px]" data-step-type={step.type}>{stepIcon(step.type)}</span>}
+            ? <button type="button" className="rounded-md border p-1.5 hover:bg-background/60" style={{ borderColor: "color-mix(in srgb, var(--icon-loop-start) 35%, transparent)", backgroundColor: "color-mix(in srgb, var(--icon-loop-start) 12%, transparent)", color: "var(--icon-loop-start)" }} onClick={(event) => { event.stopPropagation(); onToggleCollapse(step); }} title={step.collapsed ? "Expand loop" : "Collapse loop"}>{step.collapsed ? <SquarePlus size={18} /> : <SquareMinus size={18} />}</button>
+            : <span className="step-icon [&>svg]:h-[20px] [&>svg]:w-[20px]" data-step-type={step.type}>{stepIcon(step.type)}</span>}
           <div className="min-w-0">
             <div className="flex items-center gap-2 truncate text-sm font-semibold">
               <span className="truncate">{summary.title}</span>
               {summary.pixelComparison ? <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border border-border" style={{ backgroundColor: summary.pixelComparison.current ? `rgb(${summary.pixelComparison.current.join(",")})` : "transparent" }} /><span className="text-xs">{summary.pixelComparison.matches ? "=" : "!="}</span><span className="h-3 w-3 rounded-sm border border-border" style={{ backgroundColor: `rgb(${summary.pixelComparison.expected.join(",")})` }} /></span> : null}
             </div>
-            {summary.subtext ? <div className="truncate font-mono text-xs text-muted-foreground">{summary.subtext}</div> : null}
+            <div className="truncate font-mono text-xs text-muted-foreground">{summary.subtext}</div>
           </div>
         </div>
-        <div className="ml-3 flex shrink-0 items-center gap-1.5">
-          {step.type === "loop_start" ? (
-            <button
-              type="button"
-              className="rounded border border-border bg-background/60 p-1 hover:bg-background/80"
-              title={step.collapsed ? "Expand loop" : "Collapse loop"}
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleCollapse(step);
-              }}
-            >
-              {step.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-            </button>
-          ) : null}
-          <Badge>{String(row.index + 1).padStart(2, "0")}</Badge>
-        </div>
+        <div className="ml-3 flex shrink-0 items-center gap-2"><Badge>{String(row.index + 1).padStart(2, "0")}</Badge></div>
       </div>
     </div>
   );
 }
 
-export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, runHotkey, selectedId, selectedPixelLiveRgb, samplingPixelStepId, executingStepId, executingStepState, executionEvents, onSelect, onLoopsChange, onRunToggle, onStepsChange, onSamplePixelFromClickStep, onRunHotkeyClick }: { steps: ActionStep[]; loops: number; loopsCount: number; loopsInfinite: boolean; running: boolean; runHotkey: string; selectedId: string; selectedPixelLiveRgb?: Rgb | null; samplingPixelStepId?: string; executingStepId?: string | null; executingStepState?: "running" | "waiting" | "condition_false" | null; executionEvents?: ExecutionEvent[]; onSelect: (id: string) => void; onLoopsChange: (count: number, infinite: boolean) => void; onRunToggle: () => void; onStepsChange: (steps: ActionStep[]) => void; onSamplePixelFromClickStep?: (clickStepId: string) => void; onRunHotkeyClick: () => void; }) {
+export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, runHotkey, backendAvailable, selectedId, selectedPixelLiveRgb, samplingPixelStepId, executingStepId, executingStepState, executionEvents, onSelect, onLoopsChange, onRunToggle, onStepsChange, onSamplePixelFromClickStep, onRunHotkeyClick }: { steps: ActionStep[]; loops: number; loopsCount: number; loopsInfinite: boolean; running: boolean; runHotkey: string; backendAvailable: boolean; selectedId: string; selectedPixelLiveRgb?: Rgb | null; samplingPixelStepId?: string; executingStepId?: string | null; executingStepState?: "running" | "waiting" | "condition_false" | null; executionEvents?: ExecutionEvent[]; onSelect: (id: string) => void; onLoopsChange: (count: number, infinite: boolean) => void; onRunToggle: () => void; onStepsChange: (steps: ActionStep[]) => void; onSamplePixelFromClickStep?: (clickStepId: string) => void; onRunHotkeyClick: () => void; }) {
   const [loopDraft, setLoopDraft] = useState(String(loopsCount));
   const [flashByStepId, setFlashByStepId] = useState<Record<string, "success" | "warning">>({});
   const [heldStateByStepId, setHeldStateByStepId] = useState<Record<string, "danger">>({});
   const [rowGeometry, setRowGeometry] = useState<Map<string, RowGeometry>>(new Map());
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const ranges = useMemo(() => resolveLoops(steps), [steps]);
-  const totalEstimate = useMemo(() => {
-    const base = sumTiming(steps).baseMs;
-    const loops = loopsInfinite ? 1 : Math.max(1, loopsCount);
-    return formatMs(base * loops);
-  }, [steps, loopsCount, loopsInfinite]);
   const rows = useMemo(() => buildRows(steps, ranges), [steps, ranges]);
   const rowIds = rows.map((row) => steps[row.index].id);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -281,11 +235,7 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
   useEffect(() => {
     if (!running || !listRef.current) return;
     if (!executingStepId) {
-      if (typeof listRef.current.scrollTo === "function") {
-        listRef.current.scrollTo({ top: 0, behavior: "smooth" });
-      } else {
-        listRef.current.scrollTop = 0;
-      }
+      listRef.current.scrollTo({ top: 0, behavior: "smooth" });
       return;
     }
     const row = listRef.current.querySelector(`[data-step-id="${executingStepId}"]`) as HTMLElement | null;
@@ -339,9 +289,7 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
           return next;
         });
       }
-      const shouldFlash = event.phase === "step_complete" || event.phase === "loop_enter" || event.phase === "loop_exit" || event.phase === "loop_repeat";
-      if (!shouldFlash) continue;
-      const tone = event.phase === "loop_repeat" || (event.phase === "step_complete" && event.step_type === "wait") ? "warning" : "success";
+      const tone = event.phase === "step_wait" || event.phase === "loop_repeat" ? "warning" : "success";
       setFlashByStepId((current) => ({ ...current, [event.step_id]: tone }));
       if (flashTimersRef.current[event.step_id]) window.clearTimeout(flashTimersRef.current[event.step_id]);
       flashTimersRef.current[event.step_id] = window.setTimeout(() => {
@@ -367,24 +315,7 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
   const toggleCollapse = (rowStep: LoopStartStep) => onStepsChange(steps.map((step) => (step.id === rowStep.id ? { ...step, collapsed: !rowStep.collapsed } : step)));
 
   return (
-    <CollapsibleSection
-      className="sequence-builder-shell flex h-full min-h-0 flex-col"
-      contentClassName="min-h-0 flex-1"
-      title="Sequence Builder"
-      icon={<RadioTower size={16} />}
-      actions={<div className="flex items-center gap-2"><SplitHotkeyActionButton tone={running ? "danger" : "success"} icon={running ? <Square size={16} /> : <RadioTower size={16} />} label={running ? "Stop sequence" : "Run sequence"} hotkey={runHotkey} onAction={onRunToggle} onHotkey={running ? onRunToggle : onRunHotkeyClick} /></div>}
-    >
-      <div className="mb-2 grid grid-cols-3 items-center gap-2 rounded-md bg-background/40 px-3 py-1.5 text-xs text-muted-foreground">
-        <div>Actions: <span className="font-mono">{rows.length}</span></div>
-        <div className="text-center">Approx: <span className="font-mono">{totalEstimate}</span></div>
-        <div className="flex items-center justify-end gap-2">
-          <span>Loops</span>
-          <div className="relative">
-            <Input className="h-7 w-24 pr-8" type="number" min={1} value={loopsInfinite ? "" : loopDraft} disabled={loopsInfinite} onChange={(event) => { const nextValue = event.target.value; setLoopDraft(nextValue); const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 1) onLoopsChange(Math.floor(parsed), false); }} onBlur={() => { const parsed = Number(loopDraft); if (Number.isFinite(parsed) && parsed >= 1) { const safe = Math.floor(parsed); onLoopsChange(safe, false); setLoopDraft(String(safe)); } else setLoopDraft(String(loopsCount)); }} />
-            <button className={`absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 ${loopsInfinite ? "text-accent" : "text-muted-foreground hover:text-foreground"}`} onClick={() => onLoopsChange(loopsCount, !loopsInfinite)} title="Repeat indefinitely" type="button"><Infinity size={14} /></button>
-          </div>
-        </div>
-      </div>
+    <CollapsibleSection className="sequence-builder-shell flex h-full min-h-0 flex-col" contentClassName="min-h-0 flex-1" title="Sequence Builder" icon={<RadioTower size={16} />} actions={<div className="flex items-center gap-2"><label className="flex items-center gap-2 text-xs text-muted-foreground">Loops<div className="relative"><Input className="h-8 w-24 pr-8" type="number" min={1} value={loopsInfinite ? "" : loopDraft} disabled={loopsInfinite} onChange={(event) => { const nextValue = event.target.value; setLoopDraft(nextValue); const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 1) onLoopsChange(Math.floor(parsed), false); }} onBlur={() => { const parsed = Number(loopDraft); if (Number.isFinite(parsed) && parsed >= 1) { const safe = Math.floor(parsed); onLoopsChange(safe, false); setLoopDraft(String(safe)); } else setLoopDraft(String(loopsCount)); }} /><button className={`absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 ${loopsInfinite ? "text-accent" : "text-muted-foreground hover:text-foreground"}`} onClick={() => onLoopsChange(loopsCount, !loopsInfinite)} title="Repeat indefinitely" type="button"><Infinity size={14} /></button></div></label><SplitHotkeyActionButton tone={running ? "danger" : "success"} icon={running ? <Square size={16} /> : <RadioTower size={16} />} label={running ? "Stop sequence" : "Run sequence"} hotkey={runHotkey} onAction={onRunToggle} onHotkey={running ? onRunToggle : onRunHotkeyClick} disabled={!backendAvailable} /></div>}>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
           <div ref={listRef} className="relative flex h-full min-h-0 flex-col gap-2 overflow-y-auto pr-1">

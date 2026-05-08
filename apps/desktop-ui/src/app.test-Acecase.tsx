@@ -5,6 +5,8 @@ import { App } from "./app";
 import { defaultSettings } from "./lib/defaults";
 
 const apiMock = vi.hoisted(() => ({
+  health: vi.fn(),
+  bootstrap: vi.fn(),
   getSettings: vi.fn(),
   getState: vi.fn(),
   executionEvents: vi.fn(),
@@ -30,16 +32,25 @@ vi.mock("./lib/api", () => ({ api: apiMock }));
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.localStorage.clear();
+    apiMock.health.mockResolvedValue({ status: "ok", product: "Ace Auto Click" });
     apiMock.getSettings.mockResolvedValue(defaultSettings);
-    apiMock.getState.mockResolvedValue({
+    const idleState = {
       product_name: "Ace Auto Click",
       running: false,
       recording: false,
       status: "Idle",
       last_error: null
+    };
+    apiMock.getState.mockResolvedValue(idleState);
+    apiMock.executionEvents.mockResolvedValue([]);
+    apiMock.bootstrap.mockResolvedValue({
+      settings: defaultSettings,
+      state: idleState,
+      profiles: [],
+      profile_status: { path: "profiles", available: true, file_count: 0 }
     });
     apiMock.runSequence.mockResolvedValue({ state: { product_name: "Ace Auto Click", running: true, recording: false, status: "Running", last_error: null } });
-    apiMock.executionEvents.mockResolvedValue([]);
     apiMock.emergencyStop.mockResolvedValue({ state: { product_name: "Ace Auto Click", running: false, recording: false, status: "Emergency stop", last_error: null } });
     apiMock.saveSettings.mockImplementation(async (settings) => settings);
     apiMock.listProfiles.mockResolvedValue([]);
@@ -132,13 +143,12 @@ describe("App", () => {
   });
 
   it("keeps settings and runtime usable when profile endpoints are unavailable", async () => {
-    apiMock.listProfiles.mockRejectedValue(new Error('{"detail":"Not Found"}'));
-    apiMock.profileStatus.mockRejectedValue(new Error('{"detail":"Not Found"}'));
+    apiMock.bootstrap.mockRejectedValue(new Error('{"detail":"Not Found"}'));
 
     render(<App />);
 
-    expect(await screen.findByText(/Connected to Ace Auto Click/)).toBeInTheDocument();
-    expect(await screen.findByText("Profile API unavailable. Restart the app backend.")).toBeInTheDocument();
+    expect(await screen.findByText(/API unavailable/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Profile name")).toBeInTheDocument();
   });
 
   it("collapses and expands sections", () => {
@@ -148,6 +158,31 @@ describe("App", () => {
     expect(screen.queryByText("Pixel Match")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Action Library"));
     expect(screen.getByText("Pixel Match")).toBeInTheDocument();
+  });
+
+  it("renders cached settings before API bootstrap resolves", async () => {
+    apiMock.bootstrap.mockImplementation(() => new Promise(() => undefined));
+    window.localStorage.setItem("ace-auto-click:startup-cache:v1", JSON.stringify({
+      settings: { ...defaultSettings, mode: "normal", profiles: [{ ...defaultSettings.profiles[0], name: "Cached Profile" }] },
+      state: { product_name: "Ace Auto Click", running: false, recording: false, status: "Cached", last_error: null },
+      profiles: []
+    }));
+
+    render(<App />);
+
+    expect(screen.getByDisplayValue("Cached Profile")).toBeInTheDocument();
+    expect(screen.getByText("Cached")).toBeInTheDocument();
+    expect(screen.getByText("API connecting")).toBeInTheDocument();
+  });
+
+  it("keeps cached UI visible and disables backend actions when bootstrap fails", async () => {
+    apiMock.bootstrap.mockRejectedValue(new Error("offline"));
+
+    render(<App />);
+
+    expect(await screen.findByText(/API unavailable: offline/)).toBeInTheDocument();
+    expect(screen.getByText("API connecting")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Run sequence/i })).toBeDisabled();
   });
 
   it("updates a click action from the position picker", async () => {

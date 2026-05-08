@@ -179,3 +179,10 @@ class CommandResult(BaseModel):
     ok: bool = True
     state: RuntimeState
     message: str = ""
+
+
+class BootstrapData(BaseModel):
+    settings: AppSettings
+    state: RuntimeState
+    profiles: list[ProfileFile] = Field(default_factory=list)
+    profile_status: ProfileDirectoryStatus

@@ -16,30 +16,119 @@
     },
     "steps": [
       {
-        "id": "step-click-1",
+        "id": "step-loop_start-1777984163007",
+        "type": "loop_start",
+        "enabled": true,
+        "repeats": 1,
+        "interval_ms": 100,
+        "randomness_ms": 0,
+        "loop_id": "loop-1777984163007",
+        "loop_count": 1,
+        "loop_infinite": false,
+        "collapsed": false
+      },
+      {
+        "id": "step-click-1777983529691",
         "type": "click",
         "enabled": true,
         "repeats": 1,
         "interval_ms": 100,
         "randomness_ms": 0,
-        "x": 1020,
-        "y": 820,
+        "x": 984,
+        "y": 519,
         "button": "left",
         "clicks": 1,
         "random_offset": 0
       },
       {
-        "id": "step-wait-1",
+        "id": "step-wait-1777984296918",
         "type": "wait",
         "enabled": true,
         "repeats": 1,
-        "interval_ms": 0,
+        "interval_ms": 100,
         "randomness_ms": 0,
-        "ms": 3000,
+        "ms": 2000,
+        "random_ms": 0
+      },
+      {
+        "id": "step-click-1777984304814",
+        "type": "click",
+        "enabled": true,
+        "repeats": 1,
+        "interval_ms": 100,
+        "randomness_ms": 0,
+        "x": 477,
+        "y": 348,
+        "button": "left",
+        "clicks": 1,
+        "random_offset": 0
+      },
+      {
+        "id": "step-loop_end-1777984163007",
+        "type": "loop_end",
+        "enabled": true,
+        "repeats": 1,
+        "interval_ms": 100,
+        "randomness_ms": 0,
+        "loop_id": "loop-1777984163007"
+      },
+      {
+        "id": "step-click-1777984309225",
+        "type": "click",
+        "enabled": true,
+        "repeats": 1,
+        "interval_ms": 100,
+        "randomness_ms": 0,
+        "x": 1386,
+        "y": 345,
+        "button": "left",
+        "clicks": 1,
+        "random_offset": 0
+      },
+      {
+        "id": "step-pixel_check-1777984314736",
+        "type": "pixel_check",
+        "enabled": true,
+        "repeats": 1,
+        "interval_ms": 100,
+        "randomness_ms": 0,
+        "x": 562,
+        "y": 451,
+        "expected_rgb": [
+          124,
+          51,
+          21
+        ],
+        "tolerance": 10,
+        "mode": "wait_until_match"
+      },
+      {
+        "id": "step-click-1777984327837",
+        "type": "click",
+        "enabled": true,
+        "repeats": 1,
+        "interval_ms": 100,
+        "randomness_ms": 0,
+        "x": 998,
+        "y": 763,
+        "button": "left",
+        "clicks": 1,
+        "random_offset": 0
+      },
+      {
+        "id": "step-wait-1778242256751",
+        "type": "wait",
+        "enabled": true,
+        "repeats": 1,
+        "interval_ms": 100,
+        "randomness_ms": 0,
+        "ms": 1000,
         "random_ms": 0
       }
     ],
-    "loops": 0
+    "loops": 1,
+    "loops_count": 1,
+    "loops_infinite": false
   },
   "app_settings": {
     "mode": "advanced",

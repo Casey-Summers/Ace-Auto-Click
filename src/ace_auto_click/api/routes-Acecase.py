@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-import pyautogui
 from fastapi import APIRouter, HTTPException
 
 from ace_auto_click.api.models import (
     AppSettings,
+    BootstrapData,
     CommandResult,
     PixelSample,
     ProductName,
@@ -63,6 +63,16 @@ hotkeys.set_run_toggle_handler(trigger_run_toggle)
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "product": ProductName}
+
+
+@router.get("/bootstrap", response_model=BootstrapData)
+def bootstrap() -> BootstrapData:
+    return BootstrapData(
+        settings=load_app_settings(),
+        state=state(),
+        profiles=[ProfileFile.model_validate(item) for item in list_profile_files()],
+        profile_status=ProfileDirectoryStatus.model_validate(profile_directory_status()),
+    )
 
 
 @router.get("/state", response_model=RuntimeState)
@@ -189,6 +199,8 @@ def open_profile_folder() -> dict[str, str]:
 
 @router.get("/mouse-position")
 def mouse_position() -> dict[str, int]:
+    import pyautogui
+
     x, y = pyautogui.position()
     return {"x": int(x), "y": int(y)}
 

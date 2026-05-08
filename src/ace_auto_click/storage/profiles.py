@@ -68,15 +68,19 @@ def profile_directory_status() -> dict[str, Any]:
 
 
 def save_profile_export(settings: AppSettings, profile: AutomationProfile) -> dict[str, Any]:
+    app_settings: dict[str, Any] = {
+        "mode": settings.mode,
+        "run_toggle_hotkey": settings.run_toggle_hotkey,
+        "emergency_stop_hotkey": settings.emergency_stop_hotkey,
+        "show_event_log": settings.show_event_log,
+        "theme": settings.theme,
+        "icon_colors_profile_dependent": settings.icon_colors_profile_dependent,
+    }
+    if settings.icon_colors_profile_dependent:
+        app_settings["action_icon_colors"] = profile.action_icon_colors
     export = ProfileExport(
         profile=profile,
-        app_settings={
-            "mode": settings.mode,
-            "run_toggle_hotkey": settings.run_toggle_hotkey,
-            "emergency_stop_hotkey": settings.emergency_stop_hotkey,
-            "show_event_log": settings.show_event_log,
-            "theme": settings.theme,
-        },
+        app_settings=app_settings,
     )
     path = _profile_path(profile.name)
     with path.open("w", encoding="utf-8") as handle:

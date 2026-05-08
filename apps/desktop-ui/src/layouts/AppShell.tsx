@@ -14,15 +14,15 @@ export function AppShell({
   right: ReactNode;
 }) {
   return (
-    <main className="flex min-h-screen flex-col p-5">
+    <main className="flex h-screen min-h-[720px] flex-col overflow-hidden p-5">
       {header}
-      <div className="grid flex-1 grid-cols-[280px_minmax(360px,1fr)_320px] gap-4">
-        <aside className="flex min-h-0 flex-col gap-3 rounded-xl border border-border bg-surface/40 p-3">{left}</aside>
-        <section className="grid min-h-0 content-start gap-3">
+      <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(360px,1fr)_320px] gap-4">
+        <aside className="flex min-h-0 flex-col gap-3 overflow-hidden rounded-xl border border-border bg-surface/40 p-3">{left}</aside>
+        <section className="flex min-h-0 flex-col gap-3 p-0">
           {centerTop}
-          {center}
+          <div className="min-h-0 flex-1">{center}</div>
         </section>
-        <aside className="flex min-h-0 flex-col gap-3 rounded-xl border border-border bg-surface/40 p-3">{right}</aside>
+        <aside className="flex min-h-0 flex-col gap-3 overflow-hidden rounded-xl border border-border bg-surface/40 p-3">{right}</aside>
       </div>
     </main>
   );

@@ -18,6 +18,7 @@ export function App() {
   const controller = useAppController();
   const {
     activeProfile,
+    backendAvailable,
     confirmSaveProfile,
     emergencyStop,
     focusEmergency,
@@ -73,6 +74,7 @@ export function App() {
           <h1 className="text-xl font-semibold">Ace Auto Click</h1>
           <ModeToggle value={settings.mode} onChange={setMode} />
           <Badge tone={state.running ? "success" : "neutral"}>{state.status}</Badge>
+          <Badge tone={backendAvailable ? "success" : "warning"}>{backendAvailable ? "API connected" : "API connecting"}</Badge>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
           Automation workspace for precise mouse, keyboard, pixel, and sequence control.
@@ -91,6 +93,7 @@ export function App() {
           hotkey={settings.emergency_stop_hotkey}
           onAction={emergencyStop}
           onHotkey={state.running ? emergencyStop : openEmergencySettings}
+          disabled={!backendAvailable}
         />
       </div>
     </header>
@@ -139,6 +142,7 @@ export function App() {
       onRunToggle={runToggle}
       onRunHotkeyClick={openRunHotkeySettings}
       onSamplePixelFromClickStep={controller.samplePixelFromClickStep}
+      backendAvailable={backendAvailable}
     />
   ) : (
     <NormalRunPanel
@@ -146,6 +150,7 @@ export function App() {
       loops={activeProfile.loops}
       running={state.running}
       runHotkey={settings.run_toggle_hotkey}
+      backendAvailable={backendAvailable}
       onLoopsChange={(loops) => patchProfile({ loops })}
       onRunToggle={runToggle}
     />
@@ -157,18 +162,17 @@ export function App() {
       onChange={(normalPatch) => patchProfile({ normal: { ...activeProfile.normal, ...normalPatch } })}
     />
   ) : (
-      <StepDetailsPanel
-        step={selectedStep}
+    <StepDetailsPanel
+      step={selectedStep}
       pickCursorPosition={pickCursorPosition}
       pickingClickPosition={selectedStep?.id === pickingClickStepId}
       pixelLiveRgb={pixelLiveRgb}
       samplingPixel={selectedStep?.id === samplingPixelStepId}
       onChange={patchSelected}
-        onSamplePixel={samplePixel}
-        onPickClickPosition={pickClickPosition}
-        onDuplicate={controller.duplicateSelectedStep}
-        onDelete={controller.deleteSelectedStep}
-      />
+      onSamplePixel={samplePixel}
+      onPickClickPosition={pickClickPosition}
+      onDelete={controller.deleteSelectedStep}
+    />
   );
 
   return (

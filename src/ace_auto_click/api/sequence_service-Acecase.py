@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pyautogui
 from fastapi import HTTPException
 
 from ace_auto_click.api.models import (
@@ -28,7 +27,12 @@ def sequence_for_run(settings: AppSettings) -> tuple[list[ActionStepModel], int]
         loops = 0 if profile.loops_infinite else max(1, profile.loops_count or 1)
         return profile.steps, loops
     normal = profile.normal
-    x, y = pyautogui.position() if normal.use_current_mouse else (0, 0)
+    if normal.use_current_mouse:
+        import pyautogui
+
+        x, y = pyautogui.position()
+    else:
+        x, y = (0, 0)
     return [
         ClickStepModel(
             id="normal-click",
