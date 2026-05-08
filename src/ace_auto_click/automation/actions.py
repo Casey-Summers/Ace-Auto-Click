@@ -24,12 +24,9 @@ class ActionStep:
         if not self.enabled:
             return True
 
-        for repeat_index in range(max(1, self.repeats)):
+        for _ in range(max(1, self.repeats)):
             if engine._stop_evt.is_set():
                 return False
-
-            if repeat_index > 0 and hasattr(engine, "emit_execution_event"):
-                engine.emit_execution_event(self.id, self.type, "step_wait")
 
             if not self._run(engine):
                 return False
@@ -45,6 +42,9 @@ class ActionStep:
                     if engine._stop_evt.is_set():
                         return False
                     time.sleep(0.01)
+
+            if hasattr(engine, "emit_execution_event"):
+                engine.emit_execution_event(self.id, self.type, "step_complete")
 
         return True
 

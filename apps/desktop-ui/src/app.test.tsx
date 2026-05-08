@@ -7,6 +7,7 @@ import { defaultSettings } from "./lib/defaults";
 const apiMock = vi.hoisted(() => ({
   getSettings: vi.fn(),
   getState: vi.fn(),
+  executionEvents: vi.fn(),
   runSequence: vi.fn(),
   stop: vi.fn(),
   emergencyStop: vi.fn(),
@@ -38,6 +39,7 @@ describe("App", () => {
       last_error: null
     });
     apiMock.runSequence.mockResolvedValue({ state: { product_name: "Ace Auto Click", running: true, recording: false, status: "Running", last_error: null } });
+    apiMock.executionEvents.mockResolvedValue([]);
     apiMock.emergencyStop.mockResolvedValue({ state: { product_name: "Ace Auto Click", running: false, recording: false, status: "Emergency stop", last_error: null } });
     apiMock.saveSettings.mockImplementation(async (settings) => settings);
     apiMock.listProfiles.mockResolvedValue([]);

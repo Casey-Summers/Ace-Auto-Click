@@ -153,17 +153,11 @@ class ClickEngine:
                 while (
                     loops == 0 or loop_count < loops
                 ) and not self._stop_evt.is_set():
-                    if loop_count > 0:
-                        for step in steps:
-                            if step.type == "loop_start":
-                                self.emit_execution_event(step.id, step.type, "loop_repeat")
                     for step in steps:
                         if self._stop_evt.is_set():
                             break
                         self.current_step_id = step.id
                         self.current_step_state = "running"
-                        if step.type != "pixel_check":
-                            self.emit_execution_event(step.id, step.type, "step_wait" if step.type == "wait" else "step_execute")
                         cont = step.execute(self)
                         if not cont:
                             # Step logic requested stop
@@ -209,9 +203,6 @@ class ClickEngine:
                             continue
                         if node.action is None or not node.action.enabled:
                             continue
-                        if node.action.type != "pixel_check":
-                            phase = "step_wait" if node.action.type == "wait" else "step_execute"
-                            self.emit_execution_event(node.row_step_id, node.step_type, phase)
                         cont = node.action.execute(self)
                         if not cont:
                             break

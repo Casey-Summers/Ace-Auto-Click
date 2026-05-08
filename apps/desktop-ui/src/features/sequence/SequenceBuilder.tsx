@@ -289,7 +289,9 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
           return next;
         });
       }
-      const tone = event.phase === "step_wait" || event.phase === "loop_repeat" ? "warning" : "success";
+      const shouldFlash = event.phase === "step_complete" || event.phase === "loop_enter" || event.phase === "loop_exit" || event.phase === "loop_repeat";
+      if (!shouldFlash) continue;
+      const tone = event.phase === "loop_repeat" || (event.phase === "step_complete" && event.step_type === "wait") ? "warning" : "success";
       setFlashByStepId((current) => ({ ...current, [event.step_id]: tone }));
       if (flashTimersRef.current[event.step_id]) window.clearTimeout(flashTimersRef.current[event.step_id]);
       flashTimersRef.current[event.step_id] = window.setTimeout(() => {
