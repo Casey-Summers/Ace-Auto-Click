@@ -65,14 +65,16 @@ export function useAppController() {
 
   useEffect(() => {
     document.documentElement.classList.toggle("light", settings.theme === "light");
-    const colors = settings.action_icon_colors ?? {};
+    const colors = settings.icon_colors_profile_dependent
+      ? (activeProfile.action_icon_colors ?? settings.action_icon_colors ?? {})
+      : (settings.action_icon_colors ?? {});
     document.documentElement.style.setProperty("--icon-click", colors.click ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-wait", colors.wait ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-pixel", colors.pixel_check ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-key", colors.key_tap ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-loop-start", colors.loop_start ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-loop-end", colors.loop_end ?? "#55B3FF");
-  }, [settings.theme, settings.action_icon_colors]);
+  }, [settings.theme, settings.icon_colors_profile_dependent, settings.action_icon_colors, activeProfile.action_icon_colors]);
 
   useEffect(() => {
     Promise.all([api.getSettings(), api.getState()])

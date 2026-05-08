@@ -92,12 +92,12 @@
         "repeats": 1,
         "interval_ms": 100,
         "randomness_ms": 0,
-        "x": -786,
-        "y": 784,
+        "x": 562,
+        "y": 451,
         "expected_rgb": [
-          27,
-          28,
-          29
+          124,
+          51,
+          21
         ],
         "tolerance": 10,
         "mode": "wait_until_match"
@@ -109,11 +109,21 @@
         "repeats": 1,
         "interval_ms": 100,
         "randomness_ms": 0,
-        "x": 0,
-        "y": 0,
+        "x": 998,
+        "y": 763,
         "button": "left",
         "clicks": 1,
         "random_offset": 0
+      },
+      {
+        "id": "step-wait-1778242256751",
+        "type": "wait",
+        "enabled": true,
+        "repeats": 1,
+        "interval_ms": 100,
+        "randomness_ms": 0,
+        "ms": 1000,
+        "random_ms": 0
       }
     ],
     "loops": 1,

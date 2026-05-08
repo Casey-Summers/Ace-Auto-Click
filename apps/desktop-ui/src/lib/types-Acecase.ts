@@ -87,6 +87,7 @@ export type AppSettings = {
   mode: AppMode;
   simple: SimpleSettings;
   theme: "dark" | "light";
+  icon_colors_profile_dependent?: boolean;
   action_icon_colors?: Partial<Record<"click" | "wait" | "pixel_check" | "key_tap" | "loop_start" | "loop_end", string>>;
   profiles: AutomationProfile[];
 };
@@ -156,6 +157,7 @@ export type AutomationProfile = {
   loops: number;
   loops_count: number;
   loops_infinite: boolean;
+  action_icon_colors?: Partial<Record<"click" | "wait" | "pixel_check" | "key_tap" | "loop_start" | "loop_end", string>>;
 };
 
 export type PixelSample = {

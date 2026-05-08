@@ -14,7 +14,7 @@ import {
   verticalListSortingStrategy
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Infinity, RadioTower, Square, SquareMinus, SquarePlus } from "lucide-react";
+import { Copy, GripVertical, Infinity, RadioTower, Square, SquareMinus, SquarePlus, Trash2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CollapsibleSection } from "../../components/CollapsibleSection";
 import { SplitHotkeyActionButton } from "../../components/SplitHotkeyActionButton";
@@ -29,6 +29,7 @@ type RowSummary = { title: string; subtext: string; pixelComparison?: { current:
 type RailSegment = { id: string; y1: number; y2: number };
 type RowGeometry = { top: number; bottom: number };
 type RowItem = { index: number; indentPct: number; collapsedSummary?: RowSummary };
+type ValidationIssue = { level: "warning" | "danger"; message: string };
 
 function estimateStepTiming(step: ActionStep): Timing {
   const repeats = Math.max(1, step.repeats);
@@ -142,6 +143,24 @@ function moveBlock(steps: ActionStep[], fromIndex: number, toIndex: number, rang
   const insertIndex = toIndex > range.startIndex ? toIndex - block.length + 1 : toIndex;
   next.splice(Math.max(0, insertIndex), 0, ...block);
   return next;
+}
+
+function collectValidationIssues(steps: ActionStep[], ranges: Map<string, LoopRange>): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const loopStarts = steps.filter((s) => s.type === "loop_start");
+  const loopEnds = steps.filter((s) => s.type === "loop_end");
+  if (loopStarts.length !== loopEnds.length) issues.push({ level: "danger", message: "Unmatched loop markers found." });
+  loopStarts.forEach((loop) => {
+    if (loop.loop_infinite) issues.push({ level: "warning", message: `Infinite loop: ${loop.loop_id}` });
+    const range = ranges.get(loop.loop_id);
+    if (range && steps.slice(range.startIndex, range.endIndex + 1).some((s) => !s.enabled)) {
+      issues.push({ level: "warning", message: `Disabled step inside loop: ${loop.loop_id}` });
+    }
+  });
+  steps.forEach((step, idx) => {
+    if (step.interval_ms > 10000 || step.repeats > 1000) issues.push({ level: "warning", message: `Extreme timing at step ${idx + 1}` });
+  });
+  return issues;
 }
 
 function SortableRow({ row, step, selected, stateTone, flashTone, heldTone, selectedPixelLiveRgb, pixelSamplingAssist, onSelect, onToggleCollapse }: { row: RowItem; step: ActionStep; selected: boolean; stateTone?: "info" | "success" | "warning" | "danger"; flashTone?: "success" | "warning" | null; heldTone?: "danger" | null; selectedPixelLiveRgb?: Rgb | null; pixelSamplingAssist?: boolean; onSelect: () => void; onToggleCollapse: (step: LoopStartStep) => void; }) {

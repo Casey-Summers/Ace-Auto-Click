@@ -96,6 +96,10 @@ class AutomationProfile(BaseModel):
     loops: Annotated[int, Field(ge=0, le=100_000)] = 0
     loops_count: Annotated[int, Field(ge=1, le=100_000)] = 1
     loops_infinite: bool = False
+    action_icon_colors: dict[
+        Literal["click", "wait", "pixel_check", "key_tap", "loop_start", "loop_end"],
+        str,
+    ] = Field(default_factory=dict)
 
 
 class ProfileExport(BaseModel):
@@ -127,6 +131,11 @@ class AppSettings(BaseModel):
     mode: Literal["normal", "advanced"] = "advanced"
     simple: SimpleSettings = Field(default_factory=SimpleSettings)
     theme: Literal["dark", "light"] = "dark"
+    icon_colors_profile_dependent: bool = False
+    action_icon_colors: dict[
+        Literal["click", "wait", "pixel_check", "key_tap", "loop_start", "loop_end"],
+        str,
+    ] = Field(default_factory=dict)
     profiles: list[AutomationProfile] = Field(default_factory=list)
 
 

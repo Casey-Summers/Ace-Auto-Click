@@ -53,6 +53,7 @@ export const defaultSettings: AppSettings = {
   active_profile_id: defaultProfile.id,
   mode: "advanced",
   theme: "dark",
+  icon_colors_profile_dependent: false,
   action_icon_colors: {
     click: "#55B3FF",
     wait: "#55B3FF",

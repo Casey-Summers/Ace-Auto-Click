@@ -131,6 +131,16 @@ export function SettingsModal({
                   </Select>
                 </SettingRow>
                 <SettingRow label="Action icon colors" description="Customize icon colors by action type.">
+                  <div className="mb-2">
+                    <label className="flex items-center gap-3 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(settings.icon_colors_profile_dependent)}
+                        onChange={(event) => onSettingsChange({ icon_colors_profile_dependent: event.target.checked })}
+                      />
+                      Profile-specific colors (off = global colors)
+                    </label>
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       ["click", "Click"],
@@ -144,15 +154,31 @@ export function SettingsModal({
                         <span>{label}</span>
                         <input
                           type="color"
-                          value={(settings.action_icon_colors?.[key as keyof NonNullable<AppSettings["action_icon_colors"]>] ?? "#55b3ff")}
-                          onChange={(event) =>
+                          value={
+                            (
+                              (settings.icon_colors_profile_dependent
+                                ? activeProfile.action_icon_colors?.[key as keyof NonNullable<AppSettings["action_icon_colors"]>]
+                                : settings.action_icon_colors?.[key as keyof NonNullable<AppSettings["action_icon_colors"]>]
+                              ) ?? "#55b3ff"
+                            )
+                          }
+                          onChange={(event) => {
+                            if (settings.icon_colors_profile_dependent) {
+                              onProfileChange({
+                                action_icon_colors: {
+                                  ...(activeProfile.action_icon_colors ?? {}),
+                                  [key]: event.target.value
+                                }
+                              });
+                              return;
+                            }
                             onSettingsChange({
                               action_icon_colors: {
                                 ...(settings.action_icon_colors ?? {}),
                                 [key]: event.target.value
                               }
-                            })
-                          }
+                            });
+                          }}
                         />
                       </label>
                     ))}
