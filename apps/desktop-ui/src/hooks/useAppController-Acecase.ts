@@ -1,0 +1,655 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { api } from "../lib/api";
+import { defaultProfile, defaultSettings } from "../lib/defaults";
+import { createStep } from "../lib/steps";
+import { defaultState, normalizeSettings } from "../lib/settings";
+import { loadStartupCache, saveStartupCache } from "../lib/startupCache";
+import type { ActionStep, AppMode, AppSettings, AutomationProfile, ExecutionEvent, Point, ProfileFile, Rgb, RuntimeState } from "../lib/types";
+
+export function useAppController() {
+  const startupCache = useMemo(() => loadStartupCache(), []);
+  const [settings, setSettings] = useState<AppSettings>(() => startupCache?.settings ?? defaultSettings);
+  const [state, setState] = useState<RuntimeState>(() => startupCache?.state ?? defaultState);
+  const [backendAvailable, setBackendAvailable] = useState(false);
+  const [selectedId, setSelectedId] = useState(defaultProfile.steps[0].id);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [focusEmergency, setFocusEmergency] = useState(false);
+  const [focusKeybind, setFocusKeybind] = useState<"" | "run" | "emergency">("");
+  const [profileFiles, setProfileFiles] = useState<ProfileFile[]>(() => startupCache?.profiles ?? []);
+  const [selectedProfileFile, setSelectedProfileFile] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [loadDialogOpen, setLoadDialogOpen] = useState(false);
+  const [pickingClickStepId, setPickingClickStepId] = useState("");
+  const [pickCursorPosition, setPickCursorPosition] = useState<Point | null>(null);
+  const [pixelLiveRgb, setPixelLiveRgb] = useState<Rgb | null>(null);
+  const [samplingPixelStepId, setSamplingPixelStepId] = useState("");
+  const captureSessionId = useRef("");
+  const settingsHydrated = useRef(false);
+  const settingsRef = useRef(settings);
+  const [log, setLog] = useState<string[]>([startupCache ? "Loaded cached workspace. Connecting to API..." : "UI ready. Connecting to API..."]);
+  const [executionEvents, setExecutionEvents] = useState<ExecutionEvent[]>([]);
+  const executionAfter = useRef(0);
+
+  const activeProfile = useMemo(
+    () => settings.profiles.find((profile) => profile.id === settings.active_profile_id) ?? settings.profiles[0] ?? defaultProfile,
+    [settings]
+  );
+  const selectedStep = useMemo(
+    () => (selectedId ? activeProfile.steps.find((step) => step.id === selectedId) : undefined),
+    [activeProfile.steps, selectedId]
+  );
+  const profileNameError = useMemo(() => {
+    const name = activeProfile.name.trim();
+    if (!name) return "Profile name is required before saving.";
+    const duplicate = settings.profiles.some((profile) => profile.id !== activeProfile.id && profile.name.trim().toLowerCase() === name.toLowerCase());
+    return duplicate ? "Another imported profile already uses this name." : "";
+  }, [activeProfile.id, activeProfile.name, settings.profiles]);
+
+  const refreshProfiles = async () => {
+    try {
+      const [nextProfileFiles] = await Promise.all([api.listProfiles(), api.profileStatus()]);
+      setProfileFiles(nextProfileFiles);
+      saveStartupCache({ settings: settingsRef.current, state, profiles: nextProfileFiles });
+      setProfileError("");
+    } catch (error) {
+      const message = error instanceof Error && /404|Not Found/i.test(error.message)
+        ? "Profile API unavailable. Restart the app backend."
+        : "Profiles folder is not ready.";
+      setProfileError(message);
+      setLog((items) => [`Profile manager: ${error instanceof Error ? error.message : String(error)}`, ...items]);
+    }
+  };
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("light", settings.theme === "light");
+    const colors = settings.action_icon_colors ?? {};
+    document.documentElement.style.setProperty("--icon-click", colors.click ?? "#55B3FF");
+    document.documentElement.style.setProperty("--icon-wait", colors.wait ?? "#55B3FF");
+    document.documentElement.style.setProperty("--icon-pixel", colors.pixel_check ?? "#55B3FF");
+    document.documentElement.style.setProperty("--icon-key", colors.key_tap ?? "#55B3FF");
+    document.documentElement.style.setProperty("--icon-loop-start", colors.loop_start ?? "#55B3FF");
+    document.documentElement.style.setProperty("--icon-loop-end", colors.loop_end ?? "#55B3FF");
+  }, [settings.theme, settings.action_icon_colors]);
+
+  useEffect(() => {
+    api.bootstrap()
+      .then((bootstrap) => {
+        const nextSettings = normalizeSettings(bootstrap.settings);
+        setSettings(nextSettings);
+        settingsRef.current = nextSettings;
+        setProfileFiles(bootstrap.profiles);
+        setState(bootstrap.state);
+        setBackendAvailable(true);
+        settingsHydrated.current = true;
+        saveStartupCache({ settings: nextSettings, state: bootstrap.state, profiles: bootstrap.profiles });
+        setLog((items) => [`Connected to ${bootstrap.state.product_name}.`, ...items]);
+      })
+      .catch((error) => {
+        setBackendAvailable(false);
+        settingsHydrated.current = true;
+        setState((current) => ({ ...current, running: false, recording: false, status: "Disconnected", last_error: error.message }));
+        setLog((items) => [`API unavailable: ${error.message}`, ...items]);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!backendAvailable) return undefined;
+    const intervalMs = state.running ? 120 : 1200;
+    const timer = window.setInterval(() => {
+      api.getState().then((nextState) => {
+        setState(nextState);
+        setBackendAvailable(true);
+      }).catch(() => setBackendAvailable(false));
+      api.executionEvents(executionAfter.current).then((events) => {
+        if (!events.length) return;
+        executionAfter.current = Math.max(executionAfter.current, ...events.map((event) => event.sequence_no));
+        setExecutionEvents(events);
+      }).catch(() => undefined);
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [backendAvailable, state.running]);
+
+  useEffect(() => {
+    if (!pickingClickStepId && !samplingPixelStepId) {
+      setPickCursorPosition(null);
+      setPixelLiveRgb(null);
+      return undefined;
+    }
+
+    let active = true;
+    const refreshLiveState = async () => {
+      try {
+        const position = await api.mousePosition();
+        if (!active) return;
+        setPickCursorPosition(position);
+        if (selectedStep?.type === "pixel_check") {
+          const pixel = await api.pixel(position.x, position.y);
+          if (active) setPixelLiveRgb(pixel.rgb);
+        } else if (samplingPixelStepId && selectedStep?.type === "click") {
+          const pixel = await api.pixel(selectedStep.x, selectedStep.y);
+          if (active) setPixelLiveRgb(pixel.rgb);
+        }
+      } catch {
+        return undefined;
+      }
+    };
+    void refreshLiveState();
+    const timer = window.setInterval(() => void refreshLiveState(), 160);
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        const sessionId = captureSessionId.current;
+        if (sessionId) {
+          api.cancelInputCapture(sessionId).catch(() => undefined);
+          captureSessionId.current = "";
+        }
+        setPickingClickStepId("");
+        setSamplingPixelStepId("");
+        setLog((items) => ["Position picker cancelled.", ...items]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [pickingClickStepId, samplingPixelStepId, selectedStep?.type]);
+
+  useEffect(() => {
+    if (!pickingClickStepId && !samplingPixelStepId) return;
+    const selectedStillActive = activeProfile.steps.some((step) => step.id === (pickingClickStepId || samplingPixelStepId));
+    const invalidClickMode = Boolean(pickingClickStepId) && (!selectedStep || selectedStep.id !== pickingClickStepId || selectedStep.type !== "click");
+    const invalidPixelMode = Boolean(samplingPixelStepId) && (!selectedStep || selectedStep.id !== samplingPixelStepId || selectedStep.type !== "pixel_check");
+    if (!selectedStillActive || invalidClickMode || invalidPixelMode || settings.mode !== "advanced") {
+      const sessionId = captureSessionId.current;
+      if (sessionId) {
+        api.cancelInputCapture(sessionId).catch(() => undefined);
+        captureSessionId.current = "";
+      }
+      setPickingClickStepId("");
+      setSamplingPixelStepId("");
+    }
+  }, [activeProfile.steps, pickingClickStepId, samplingPixelStepId, selectedStep, settings.mode]);
+
+  useEffect(() => {
+    if (!settingsHydrated.current || !backendAvailable) return undefined;
+    const timer = window.setTimeout(() => {
+      api.saveSettings(settings).catch((error) => {
+        setBackendAvailable(false);
+        setProfileError("Background keybind sync failed. Restart the app backend.");
+        setLog((items) => [`Settings sync failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
+      });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [backendAvailable, settings]);
+
+  useEffect(() => {
+    saveStartupCache({ settings, state, profiles: profileFiles });
+  }, [profileFiles, settings, state]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if (key === settings.emergency_stop_hotkey.toLowerCase()) {
+        event.preventDefault();
+        if (backendAvailable && state.running) {
+          void emergencyStop();
+        } else {
+          openEmergencySettings();
+        }
+      }
+      if (backendAvailable && key === settings.run_toggle_hotkey.toLowerCase()) {
+        event.preventDefault();
+        void runToggle();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  useEffect(() => {
+    if (state.running) setSelectedId("");
+  }, [state.running]);
+
+  const patchSettings = (patch: Partial<AppSettings>) => {
+    setSettings((current) => {
+      const next = { ...current, ...patch };
+      settingsRef.current = next;
+      return next;
+    });
+  };
+
+  const patchProfile = (patch: Partial<AutomationProfile>) => {
+    setSettings((current) => {
+      const next = {
+        ...current,
+        profiles: current.profiles.map((profile) =>
+          profile.id === activeProfile.id ? { ...profile, ...patch } : profile
+        )
+      };
+      settingsRef.current = next;
+      return next;
+    });
+  };
+
+  const patchSteps = (steps: ActionStep[]) => patchProfile({ steps });
+
+  const findLoopRange = (steps: ActionStep[], startIndex: number) => {
+    const start = steps[startIndex];
+    if (!start || start.type !== "loop_start") return null;
+    let depth = 1;
+    for (let index = startIndex + 1; index < steps.length; index += 1) {
+      const step = steps[index];
+      if (step.type === "loop_start") depth += 1;
+      if (step.type === "loop_end") depth -= 1;
+      if (depth === 0 && step.type === "loop_end" && step.loop_id === start.loop_id) {
+        return { startIndex, endIndex: index };
+      }
+    }
+    return null;
+  };
+
+  const patchSelected = (patch: Partial<ActionStep>) => {
+    if (!selectedStep) return;
+    if (selectedStep?.type === "loop_start" && patch.enabled !== undefined) {
+      const startIndex = activeProfile.steps.findIndex((step) => step.id === selectedStep.id);
+      const range = findLoopRange(activeProfile.steps, startIndex);
+      if (range) {
+        patchSteps(
+          activeProfile.steps.map((step, index) =>
+            index >= range.startIndex && index <= range.endIndex
+              ? step.type === "loop_start"
+                ? ({ ...step, enabled: patch.enabled, collapsed: !patch.enabled ? true : step.collapsed } as ActionStep)
+                : ({ ...step, enabled: patch.enabled } as ActionStep)
+              : step
+          )
+        );
+        return;
+      }
+    }
+    patchSteps(
+      activeProfile.steps.map((step) =>
+        step.id === selectedStep?.id ? ({ ...step, ...patch } as ActionStep) : step
+      )
+    );
+  };
+
+  const addStep = (type: ActionStep["type"]) => {
+    if (type === "loop_start") {
+      const loopId = `loop-${Date.now()}`;
+      const start = { ...createStep("loop_start"), loop_id: loopId };
+      const end = { ...createStep("loop_end"), loop_id: loopId };
+      patchSteps([...activeProfile.steps, start, end]);
+      setSelectedId(start.id);
+    } else {
+      const step = createStep(type);
+      patchSteps([...activeProfile.steps, step]);
+      setSelectedId(step.id);
+    }
+    patchProfile({ mode: "advanced" });
+    patchSettings({ mode: "advanced" });
+  };
+
+  const requestSaveProfile = () => {
+    setProfileError("");
+    if (profileNameError) {
+      setProfileError(profileNameError);
+      return;
+    }
+    setSaveDialogOpen(true);
+  };
+
+  const confirmSaveProfile = async () => {
+    if (!backendAvailable) {
+      setProfileError("Backend unavailable. Profile save will be available after the API connects.");
+      return;
+    }
+    setProfileSaving(true);
+    setProfileError("");
+    try {
+      const saved = await api.saveProfile(settings);
+      await refreshProfiles();
+      setSelectedProfileFile(saved.file_name);
+      setSaveDialogOpen(false);
+      setLog((items) => [`Saved profile ${saved.profile_name}.`, ...items]);
+    } catch (error) {
+      const message = error instanceof Error && /404|Not Found/i.test(error.message)
+        ? "Profile API unavailable. Restart the app backend."
+        : error instanceof Error ? error.message : "Profile could not be saved.";
+      setProfileError(message);
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const loadProfile = async () => {
+    if (!selectedProfileFile) return;
+    if (!backendAvailable) {
+      setProfileError("Backend unavailable. Profile load will be available after the API connects.");
+      return;
+    }
+    setProfileError("");
+    try {
+      const next = normalizeSettings(await api.loadProfile(selectedProfileFile));
+      setSettings(next);
+      await refreshProfiles();
+      setLoadDialogOpen(false);
+      setLog((items) => [`Loaded profile ${selectedProfileFile}.`, ...items]);
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : "Profile could not be loaded.");
+    }
+  };
+
+  const openProfilesFolder = async () => {
+    if (!backendAvailable) {
+      setProfileError("Backend unavailable. Profiles folder opens after the API connects.");
+      return;
+    }
+    try {
+      await api.openProfilesFolder();
+      await refreshProfiles();
+      setLog((items) => ["Opened profiles folder.", ...items]);
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : "Profiles folder could not be opened.");
+    }
+  };
+
+  const emergencyStop = async () => {
+    if (!backendAvailable) return;
+    const result = await api.emergencyStop();
+    setState(result.state);
+    setLog((items) => ["Emergency stop triggered.", ...items]);
+  };
+
+  const sequenceForRun = async (): Promise<ActionStep[]> => {
+    const latestSettings = settingsRef.current;
+    const latestProfile = latestSettings.profiles.find((profile) => profile.id === latestSettings.active_profile_id) ?? activeProfile;
+    if (latestSettings.mode === "advanced") {
+      return latestProfile.steps;
+    }
+    const normal = latestProfile.normal;
+    const position = normal.use_current_mouse ? await api.mousePosition() : { x: 0, y: 0 };
+    return [
+      {
+        id: "normal-click",
+        type: "click",
+        enabled: true,
+        repeats: 1,
+        interval_ms: normal.interval_ms,
+        randomness_ms: normal.interval_random_ms,
+        x: position.x,
+        y: position.y,
+        button: normal.button,
+        clicks: normal.double_click ? 2 : normal.clicks_per_cycle,
+        random_offset: normal.position_random_px
+      }
+    ];
+  };
+
+  const runToggle = async () => {
+    if (!backendAvailable) return;
+    if (state.running) {
+      await emergencyStop();
+      return;
+    }
+    const latestSettings = settingsRef.current;
+    const latestProfile = latestSettings.profiles.find((profile) => profile.id === latestSettings.active_profile_id) ?? activeProfile;
+    const result = await api.runSequence(await sequenceForRun(), latestProfile.loops_count, latestProfile.loops_infinite);
+    setState(result.state);
+    setLog((items) => [`Running ${latestProfile.name}.`, ...items]);
+  };
+
+  const openEmergencySettings = () => {
+    setSettingsOpen(true);
+    setFocusEmergency(true);
+    setFocusKeybind("emergency");
+  };
+
+  const selectStep = (id: string) => {
+    setSelectedId((current) => (current === id ? "" : id));
+  };
+
+  const openRunHotkeySettings = () => {
+    setSettingsOpen(true);
+    setFocusEmergency(false);
+    setFocusKeybind("run");
+  };
+
+  const samplePixel = async () => {
+    if (!backendAvailable) {
+      setLog((items) => ["Backend unavailable. Pixel sampling will be available after the API connects.", ...items]);
+      return;
+    }
+    if (!selectedStep || selectedStep.type !== "pixel_check") return;
+    if (samplingPixelStepId) return;
+    const stepId = selectedStep.id;
+    setSamplingPixelStepId(stepId);
+    try {
+      const started = await api.startMouseClickCapture();
+      captureSessionId.current = started.id;
+      let snapshot = started;
+      while (snapshot.status === "pending" && captureSessionId.current === started.id) {
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+        snapshot = await api.inputCaptureStatus(started.id);
+      }
+      if (captureSessionId.current !== started.id) return;
+      captureSessionId.current = "";
+      if (snapshot.status === "cancelled") {
+        setLog((items) => ["Pixel sample cancelled.", ...items]);
+        return;
+      }
+      if (snapshot.status === "failed") {
+        setLog((items) => [snapshot.error?.toLowerCase().includes("timed out") ? "Pixel sample timed out." : `Pixel sample failed: ${snapshot.error ?? "Unknown error"}`, ...items]);
+        return;
+      }
+      const position = snapshot.result;
+      if (!position) {
+        setLog((items) => ["Pixel sample failed: capture completed without coordinates.", ...items]);
+        return;
+      }
+      const sample = await api.pixel(position.x, position.y);
+      setSettings((current) => {
+        const next = {
+          ...current,
+          profiles: current.profiles.map((profile) =>
+            profile.id === current.active_profile_id
+              ? {
+                  ...profile,
+                  steps: profile.steps.map((step) =>
+                    step.id === stepId && step.type === "pixel_check"
+                      ? { ...step, x: position.x, y: position.y, expected_rgb: sample.rgb }
+                      : step
+                  )
+                }
+              : profile
+          )
+        };
+        settingsRef.current = next;
+        return next;
+      });
+      setLog((items) => [`Sampled pixel ${sample.rgb.join(", ")} at ${position.x}, ${position.y}.`, ...items]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const cancelled = /cancel/i.test(message);
+      const timedOut = /timed out|408/i.test(message);
+      setLog((items) => [cancelled ? "Pixel sample cancelled." : timedOut ? "Pixel sample timed out." : `Pixel sample failed: ${message}`, ...items]);
+    } finally {
+      captureSessionId.current = "";
+      setSamplingPixelStepId("");
+    }
+  };
+
+  const deleteSelectedStep = () => {
+    if (!selectedStep) return;
+    const currentIndex = activeProfile.steps.findIndex((step) => step.id === selectedStep.id);
+    if (currentIndex < 0) return;
+    const nextSteps = activeProfile.steps.filter((step) => step.id !== selectedStep.id);
+    patchSteps(nextSteps);
+    if (nextSteps.length === 0) return;
+    const nextIndex = Math.max(0, Math.min(currentIndex, nextSteps.length - 1));
+    setSelectedId(nextSteps[nextIndex].id);
+  };
+
+  const samplePixelFromClickStep = async (clickStepId: string) => {
+    if (!backendAvailable) return;
+    if (!samplingPixelStepId) return;
+    const clickStep = activeProfile.steps.find((step): step is Extract<ActionStep, { type: "click" }> => step.id === clickStepId && step.type === "click");
+    if (!clickStep) return;
+    try {
+      const sample = await api.pixel(clickStep.x, clickStep.y);
+      const targetPixelStepId = samplingPixelStepId;
+      setSettings((current) => {
+        const next = {
+          ...current,
+          profiles: current.profiles.map((profile) =>
+            profile.id === current.active_profile_id
+              ? {
+                  ...profile,
+                  steps: profile.steps.map((step) =>
+                    step.id === targetPixelStepId && step.type === "pixel_check"
+                      ? { ...step, x: clickStep.x, y: clickStep.y, expected_rgb: sample.rgb }
+                      : step
+                  )
+                }
+              : profile
+          )
+        };
+        settingsRef.current = next;
+        return next;
+      });
+      setSamplingPixelStepId("");
+      setLog((items) => [`Copied click coordinates ${clickStep.x}, ${clickStep.y} and sampled ${sample.rgb.join(", ")}.`, ...items]);
+    } catch (error) {
+      setLog((items) => [`Pixel sample failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
+    }
+  };
+
+  const pickClickPosition = async () => {
+    if (!backendAvailable) {
+      setLog((items) => ["Backend unavailable. Position picking will be available after the API connects.", ...items]);
+      return;
+    }
+    if (!selectedStep || selectedStep.type !== "click") return;
+    if (pickingClickStepId) return;
+    const stepId = selectedStep.id;
+    setPickingClickStepId(stepId);
+    try {
+      const started = await api.startMouseClickCapture();
+      captureSessionId.current = started.id;
+      let snapshot = started;
+      while (snapshot.status === "pending" && captureSessionId.current === started.id) {
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+        snapshot = await api.inputCaptureStatus(started.id);
+      }
+      if (captureSessionId.current !== started.id) return;
+      captureSessionId.current = "";
+      if (snapshot.status === "cancelled") {
+        setLog((items) => ["Position picker cancelled.", ...items]);
+        return;
+      }
+      if (snapshot.status === "failed") {
+        setLog((items) => [snapshot.error?.toLowerCase().includes("timed out") ? "Position picker timed out." : `Position picker failed: ${snapshot.error ?? "Unknown error"}`, ...items]);
+        return;
+      }
+      const position = snapshot.result;
+      if (!position) {
+        setLog((items) => ["Position picker failed: capture completed without coordinates.", ...items]);
+        return;
+      }
+      setSettings((current) => {
+        const next = {
+          ...current,
+          profiles: current.profiles.map((profile) =>
+            profile.id === current.active_profile_id
+              ? {
+                  ...profile,
+                  steps: profile.steps.map((step) =>
+                    step.id === stepId && step.type === "click"
+                      ? { ...step, x: position.x, y: position.y }
+                      : step
+                  )
+                }
+              : profile
+          )
+        };
+        settingsRef.current = next;
+        return next;
+      });
+      setLog((items) => [`Picked click position ${position.x}, ${position.y}.`, ...items]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const cancelled = /cancel/i.test(message);
+      const timedOut = /timed out|408/i.test(message);
+      setLog((items) => [cancelled ? "Position picker cancelled." : timedOut ? "Position picker timed out." : `Position picker failed: ${message}`, ...items]);
+    } finally {
+      captureSessionId.current = "";
+      setPickingClickStepId("");
+    }
+  };
+
+  const setMode = (mode: AppMode) => {
+    patchSettings({ mode });
+    patchProfile({ mode });
+  };
+
+  return {
+    addStep,
+    deleteSelectedStep,
+    activeProfile,
+    backendAvailable,
+    confirmSaveProfile,
+    emergencyStop,
+    focusEmergency,
+    focusKeybind,
+    loadDialogOpen,
+    loadProfile,
+    log,
+    openEmergencySettings,
+    openProfilesFolder,
+    openRunHotkeySettings,
+    patchProfile,
+    patchSelected,
+    patchSettings,
+    pickCursorPosition,
+    pixelLiveRgb,
+    pickingClickStepId,
+    profileError,
+    profileFiles,
+    profileNameError,
+    profileSaving,
+    requestSaveProfile,
+    runToggle,
+    samplingPixelStepId,
+    samplePixel,
+    samplePixelFromClickStep,
+    saveDialogOpen,
+    selectedProfileFile,
+    selectedStep,
+    setLoadDialogOpen,
+    setProfileError,
+    setSaveDialogOpen,
+    setSelectedId,
+    selectStep,
+    setSelectedProfileFile,
+    setSettingsOpen,
+    settings,
+    settingsOpen,
+    state,
+    executionEvents,
+    setFocusEmergency,
+    setFocusKeybind,
+    setMode,
+    patchSteps,
+    pickClickPosition
+  };
+}

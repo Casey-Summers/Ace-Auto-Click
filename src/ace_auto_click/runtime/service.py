@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 from shutil import which
 
@@ -9,6 +12,7 @@ from shutil import which
 ROOT = Path(__file__).resolve().parents[3]
 UI_DIR = ROOT / "apps" / "desktop-ui"
 MIN_PYTHON = (3, 12)
+CARGO_TARGET_ENV = "CARGO_TARGET_DIR"
 
 
 def run_api(host: str = "127.0.0.1", port: int = 8765) -> None:
@@ -38,13 +42,15 @@ def run_desktop_dev() -> None:
 
 def run_tauri_dev() -> None:
     npm = "npm.cmd" if sys.platform == "win32" else "npm"
-    api_process = subprocess.Popen(
+    env = os.environ.copy()
+    env.setdefault(CARGO_TARGET_ENV, str(default_cargo_target_dir()))
+    api_process = None if _api_is_running() else subprocess.Popen(
         [sys.executable, str(ROOT / "app.py"), "api"],
         cwd=ROOT,
     )
     try:
         try:
-            subprocess.run([npm, "run", "tauri", "dev"], cwd=UI_DIR, check=True)
+            subprocess.run([npm, "run", "tauri", "dev"], cwd=UI_DIR, check=True, env=env)
         except subprocess.CalledProcessError as exc:
             raise SystemExit(
                 "Tauri failed to start. If Rust/Cargo was just installed, restart "
@@ -53,7 +59,26 @@ def run_tauri_dev() -> None:
                 "Tauri error output."
             ) from exc
     finally:
-        _terminate_process(api_process)
+        if api_process is not None:
+            _terminate_process(api_process)
+
+
+def default_cargo_target_dir() -> Path:
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        return Path(base) / "AceAutoClick" / "cargo-target"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Caches" / "AceAutoClick" / "cargo-target"
+    base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(base) / "ace-auto-click" / "cargo-target"
+
+
+def _api_is_running(host: str = "127.0.0.1", port: int = 8765) -> bool:
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/health", timeout=0.7) as response:
+            return 200 <= response.status < 300
+    except (OSError, urllib.error.URLError):
+        return False
 
 
 def _terminate_process(process: subprocess.Popen[bytes]) -> None:
