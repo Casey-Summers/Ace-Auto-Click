@@ -30,6 +30,10 @@ type RailSegment = { id: string; y1: number; y2: number };
 type RowGeometry = { top: number; bottom: number };
 type RowItem = { index: number; indentPct: number; collapsedSummary?: RowSummary };
 
+function loopDisplayCount(step: LoopStartStep): number {
+  return Math.max(1, step.loop_count, step.repeats);
+}
+
 function estimateStepTiming(step: ActionStep): Timing {
   const repeats = Math.max(1, step.repeats);
   if (step.type === "wait") return { baseMs: (step.ms + step.interval_ms) * repeats, randomMs: (step.random_ms + step.randomness_ms) * repeats };
@@ -80,7 +84,7 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
     if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
     return { title: `Tap ${step.key}`, subtext: parts.join(" / ") };
   }
-  if (step.type === "loop_start") return { title: `Loop Start x${Math.max(1, step.repeats)}`, subtext: "" };
+  if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop Start infinite" : `Loop Start x${loopDisplayCount(step)}`, subtext: "" };
   return { title: "Loop End", subtext: "" };
 }
 
@@ -129,7 +133,7 @@ function buildRows(steps: ActionStep[], ranges: Map<string, LoopRange>): RowItem
       const range = ranges.get(step.loop_id);
       if (range) {
         const children = steps.slice(range.startIndex + 1, range.endIndex);
-        collapsedSummary = { title: step.loop_infinite ? `Loop infinite - ${children.length} steps` : `Loop ${step.loop_count}x - ${children.length} steps`, subtext: "" };
+        collapsedSummary = { title: step.loop_infinite ? `Loop infinite - ${children.length} steps` : `Loop ${loopDisplayCount(step)}x - ${children.length} steps`, subtext: "" };
       }
     }
     rows.push({ index, indentPct: computeIndentPct(index, ranges), collapsedSummary });

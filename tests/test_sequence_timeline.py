@@ -63,6 +63,21 @@ def test_compile_sequence_timeline_preserves_nested_loop_order_and_repeat_exit()
     ]
 
 
+def test_compile_sequence_timeline_honors_loop_marker_repeats_fallback() -> None:
+    assert timeline_signature([
+        LoopStartStepModel(id="loop-start", loop_id="loop-a", loop_count=1, repeats=2),
+        ClickStepModel(id="click-inside"),
+        LoopEndStepModel(id="loop-end", loop_id="loop-a"),
+    ]) == [
+        ("loop-start", "loop_enter"),
+        ("click-inside", "execute"),
+        ("loop-end", "loop_repeat"),
+        ("loop-start", "loop_enter"),
+        ("click-inside", "execute"),
+        ("loop-end", "loop_exit"),
+    ]
+
+
 def test_compile_sequence_timeline_skips_disabled_loop_block() -> None:
     assert timeline_signature([
         LoopStartStepModel(id="loop-start", loop_id="loop-a", enabled=False),

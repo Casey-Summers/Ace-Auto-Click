@@ -54,6 +54,12 @@ def active_profile(settings: AppSettings) -> AutomationProfile | None:
     )
 
 
+def loop_iterations(step: LoopStartStepModel, infinite_cap: int | None = None) -> int:
+    if step.loop_infinite:
+        return infinite_cap if infinite_cap is not None else 1000
+    return max(1, step.loop_count, step.repeats)
+
+
 def expand_loop_markers(steps: list[ActionStepModel]) -> list[ActionStepModel]:
     output: list[ActionStepModel] = []
     index = 0
@@ -78,7 +84,7 @@ def expand_loop_markers(steps: list[ActionStepModel]) -> list[ActionStepModel]:
             if step.loop_infinite:
                 output.extend(body * 1000)
             else:
-                output.extend(body * max(1, step.loop_count))
+                output.extend(body * loop_iterations(step))
             index = end_index
             continue
         if isinstance(step, LoopEndStepModel):
@@ -112,7 +118,7 @@ def compile_sequence_timeline(steps: list[ActionStepModel]) -> list[SequenceTime
                     continue
                 body = items[index + 1 : end_index - 1]
                 end_step = items[end_index - 1]
-                iterations = 1000 if step.loop_infinite else max(1, step.loop_count)
+                iterations = loop_iterations(step, infinite_cap=1000)
                 for iteration in range(iterations):
                     timeline.append(SequenceTimelineNode(step.id, step.type, "loop_enter"))
                     append_range(body)
