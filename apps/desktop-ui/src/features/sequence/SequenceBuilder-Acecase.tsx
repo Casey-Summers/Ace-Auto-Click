@@ -57,15 +57,15 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
   const timing = formatEstimate(estimateStepTiming(step));
   const repeat = step.repeats > 1 ? `repeats ${step.repeats}` : "repeats 1";
   const delay = `delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` ±${formatMs(step.randomness_ms)}` : ""}`;
-  if (step.type === "click") return { title: `Click ${step.button} at ${step.x}, ${step.y}`, subtext: `${repeat} / ${delay} / clicks ${step.clicks}${step.random_offset > 0 ? ` / position ±${step.random_offset}px` : ""} / ${timing}` };
+  if (step.type === "click") return { title: `Click ${step.button.charAt(0).toUpperCase()}${step.button.slice(1)} at ${step.x}, ${step.y}`, subtext: `${repeat} / ${delay} / clicks ${step.clicks}${step.random_offset > 0 ? ` / position ±${step.random_offset}px` : ""} / ${timing}` };
   if (step.type === "wait") return { title: `Wait ${formatMs(step.ms)}${step.random_ms > 0 ? ` ±${formatMs(step.random_ms)}` : ""}`, subtext: `${repeat} / ${delay} / ${timing}` };
   if (step.type === "pixel_check") {
     const matches = selected && selectedPixelLiveRgb ? Math.max(...selectedPixelLiveRgb.map((value, index) => Math.abs(value - step.expected_rgb[index]))) <= step.tolerance : false;
     return { title: "Pixel Match", subtext: `${repeat} / ${delay} / ${step.mode.replace(/_/g, " ")} / ${timing}`, pixelComparison: { current: selected && selectedPixelLiveRgb ? selectedPixelLiveRgb : null, expected: step.expected_rgb, matches } };
   }
   if (step.type === "key_tap") return { title: `Tap ${step.key}`, subtext: `${repeat} / ${delay} / ${timing}` };
-  if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop start infinite" : `Loop start ${step.loop_count}x`, subtext: `${repeat} / ${delay} / ${timing}` };
-  return { title: "Loop end", subtext: `${repeat} / ${delay} / ${timing}` };
+  if (step.type === "loop_start") return { title: `Loop Start x${Math.max(1, step.repeats)}`, subtext: `${repeat} / ${delay} / ${timing}` };
+  return { title: "Loop End", subtext: `${repeat} / ${delay} / ${timing}` };
 }
 
 function resolveLoops(steps: ActionStep[]): Map<string, LoopRange> {

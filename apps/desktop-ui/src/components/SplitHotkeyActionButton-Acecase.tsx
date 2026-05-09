@@ -28,7 +28,7 @@ export function SplitHotkeyActionButton({
         {icon}
         {label}
       </button>
-      <button type="button" className={`border-l px-2 transition disabled:cursor-not-allowed disabled:opacity-45 ${separatorClass} ${tone === "danger" ? "hover:bg-danger/16 active:bg-danger/22" : "hover:bg-success/16 active:bg-success/22"}`} onClick={onHotkey} disabled={disabled}>
+      <button type="button" className={`border-l px-2 transition disabled:cursor-not-allowed disabled:opacity-45 ${separatorClass} ${tone === "danger" ? "hover:bg-danger/24 hover:shadow-[inset_0_0_0_1px_hsl(var(--danger)/0.5)] active:bg-danger/28" : "hover:bg-success/24 hover:shadow-[inset_0_0_0_1px_hsl(var(--success)/0.5)] active:bg-success/28"}`} onClick={onHotkey} disabled={disabled}>
         <Keycap className="text-current">{hotkey}</Keycap>
       </button>
     </div>

@@ -56,7 +56,7 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
     if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
     if (step.clicks !== 1) parts.push(`clicks ${step.clicks}`);
     if (step.random_offset > 0) parts.push(`position +- ${step.random_offset}px`);
-    return { title: `Click ${step.button} at ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
+    return { title: `Click ${step.button.charAt(0).toUpperCase()}${step.button.slice(1)} at ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
   }
   if (step.type === "wait") {
     const parts: string[] = [];
@@ -80,8 +80,8 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
     if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
     return { title: `Tap ${step.key}`, subtext: parts.join(" / ") };
   }
-  if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop start infinite" : `Loop start ${step.loop_count}x`, subtext: "" };
-  return { title: "Loop end", subtext: "" };
+  if (step.type === "loop_start") return { title: `Loop Start x${Math.max(1, step.repeats)}`, subtext: "" };
+  return { title: "Loop End", subtext: "" };
 }
 
 function resolveLoops(steps: ActionStep[]): Map<string, LoopRange> {

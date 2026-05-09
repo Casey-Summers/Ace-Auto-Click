@@ -2,7 +2,6 @@ import { AlertTriangle, Settings, Zap } from "lucide-react";
 
 import { ModeToggle } from "./components/ModeToggle";
 import { SplitHotkeyActionButton } from "./components/SplitHotkeyActionButton";
-import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { ActionLibrary } from "./features/actions/ActionLibrary";
 import { EventLogPanel } from "./features/log/EventLogPanel";
@@ -72,11 +71,7 @@ export function App() {
           </div>
           <h1 className="text-xl font-semibold">Ace Auto Click</h1>
           <ModeToggle value={settings.mode} onChange={setMode} />
-          <Badge tone={state.running ? "success" : "neutral"}>{state.status}</Badge>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Automation workspace for precise mouse, keyboard, pixel, and sequence control.
-        </p>
       </div>
 
       <div className="flex items-center gap-2">

@@ -76,9 +76,6 @@ export function App() {
           <Badge tone={state.running ? "success" : "neutral"}>{state.status}</Badge>
           <Badge tone={backendAvailable ? "success" : "warning"}>{backendAvailable ? "API connected" : "API connecting"}</Badge>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Automation workspace for precise mouse, keyboard, pixel, and sequence control.
-        </p>
       </div>
 
       <div className="flex items-center gap-2">
