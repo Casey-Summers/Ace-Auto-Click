@@ -138,10 +138,10 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
             </div>
           </FieldRow>
 
-          {step.type === "click" ? (
-            <FieldRow title="Position Picker" info="Waits for the next click and records its exact screen location for this click action.">
+          {step.type === "click" || step.type === "move" ? (
+            <FieldRow title="Position Picker" info="Waits for the next click and records its exact screen location for this action.">
               <Button variant={pickingClickPosition ? "success" : "default"} onClick={onPickClickPosition} disabled={pickingClickPosition}>
-                {pickingClickPosition ? "Waiting for click location" : "Pick Click Position"}
+                {pickingClickPosition ? "Waiting for location" : step.type === "click" ? "Pick Click Position" : "Pick Move Position"}
               </Button>
             </FieldRow>
           ) : null}
@@ -154,6 +154,8 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
 
           {step.type === "click" ? <><FieldRow title="Mouse X" info="Horizontal screen coordinate."><Input type="number" value={step.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></FieldRow><FieldRow title="Mouse Y" info="Vertical screen coordinate."><Input type="number" value={step.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></FieldRow><FieldRow title="Button" info="Mouse button to click."><Select value={step.button} onChange={(event) => onChange({ button: event.target.value as "left" | "right" | "middle" })}><option value="left">left</option><option value="right">right</option><option value="middle">middle</option></Select></FieldRow><FieldRow title="Clicks" info="Number of click presses per step run."><Input type="number" value={step.clicks} onChange={(event) => onChange({ clicks: Number(event.target.value) })} /></FieldRow><FieldRow title="Position Randomness (px)" info="Random offset around target point."><Input type="number" value={step.random_offset} onChange={(event) => onChange({ random_offset: Number(event.target.value) })} /></FieldRow><CoordinatePreview x={step.x} y={step.y} offset={step.random_offset} /></> : null}
 
+          {step.type === "move" ? <><FieldRow title="Mouse X" info="Horizontal screen coordinate."><Input type="number" value={step.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></FieldRow><FieldRow title="Mouse Y" info="Vertical screen coordinate."><Input type="number" value={step.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></FieldRow><FieldRow title="Position Randomness (px)" info="Random offset around target point."><Input type="number" value={step.random_offset} onChange={(event) => onChange({ random_offset: Number(event.target.value) })} /></FieldRow><CoordinatePreview x={step.x} y={step.y} offset={step.random_offset} /></> : null}
+
           {step.type === "wait" ? <><FieldRow title="Wait Duration (ms)" info="Primary wait duration for this step."><Input type="number" value={step.ms} onChange={(event) => onChange({ ms: Number(event.target.value) })} /></FieldRow><FieldRow title="Random Wait (ms)" info="Additional random wait duration."><Input type="number" value={step.random_ms} onChange={(event) => onChange({ random_ms: Number(event.target.value) })} /></FieldRow><TimingPreview baseMs={step.ms + step.interval_ms} randomMs={step.random_ms + step.randomness_ms} repeats={step.repeats} /></> : null}
 
           {step.type === "pixel_check" ? <FieldRow title="Tolerance" info="Allowed RGB distance from expected color."><Input type="number" value={step.tolerance} onChange={(event) => onChange({ tolerance: Number(event.target.value) })} /></FieldRow> : null}
@@ -164,7 +166,7 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
         </div>
 
         <ActionDetailsSection
-          active={Boolean((step.type === "click" && pickingClickPosition) || step.type === "pixel_check")}
+          active={Boolean(((step.type === "click" || step.type === "move") && pickingClickPosition) || step.type === "pixel_check")}
           rightContent={step.type === "pixel_check" ? (() => {
             const delta = pixelLiveRgb ? Math.max(...pixelLiveRgb.map((value, index) => Math.abs(value - step.expected_rgb[index]))) : null;
             const withinTolerance = delta !== null && delta <= step.tolerance;
@@ -173,7 +175,7 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
             return <div className={`rounded border px-2 py-1 text-xs font-semibold ${statusTone}`}>{status}</div>;
           })() : undefined}
         >
-          {step.type === "click" ? <CursorPreview cursor={pickCursorPosition ?? null} target={{ x: step.x, y: step.y }} /> : null}
+          {step.type === "click" || step.type === "move" ? <CursorPreview cursor={pickCursorPosition ?? null} target={{ x: step.x, y: step.y }} /> : null}
           {step.type === "pixel_check" ? <PixelMatchPreview live={pixelLiveRgb ?? null} expected={step.expected_rgb} /> : null}
         </ActionDetailsSection>
       </div>

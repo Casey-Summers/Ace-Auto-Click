@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from ace_auto_click.api.models import AppSettings, AutomationProfile, ClickStepModel, ProfileExport, SequenceRunRequest, SimpleSettings
+from ace_auto_click.api.models import AppSettings, AutomationProfile, ClickStepModel, MoveStepModel, ProfileExport, SequenceRunRequest, SimpleSettings
 
 
 def test_simple_settings_rejects_zero_interval() -> None:
@@ -17,6 +17,15 @@ def test_click_step_accepts_professional_defaults() -> None:
     assert step.type == "click"
     assert step.button == "left"
     assert step.clicks == 1
+
+
+def test_move_step_accepts_pointer_target_defaults() -> None:
+    step = MoveStepModel(id="move-1")
+
+    assert step.type == "move"
+    assert step.x == 0
+    assert step.y == 0
+    assert step.random_offset == 0
 
 
 def test_app_settings_accepts_profiles_and_mode_fields() -> None:

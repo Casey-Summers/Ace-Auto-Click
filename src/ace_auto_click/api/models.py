@@ -46,6 +46,13 @@ class ClickStepModel(BaseStep):
     random_offset: Annotated[int, Field(ge=0, le=5_000)] = 0
 
 
+class MoveStepModel(BaseStep):
+    type: Literal["move"] = "move"
+    x: int = 0
+    y: int = 0
+    random_offset: Annotated[int, Field(ge=0, le=5_000)] = 0
+
+
 class WaitStepModel(BaseStep):
     type: Literal["wait"] = "wait"
     ms: Annotated[int, Field(ge=0, le=3_600_000)] = 1000
@@ -82,7 +89,7 @@ class LoopEndStepModel(BaseStep):
 
 
 ActionStepModel = Annotated[
-    Union[ClickStepModel, WaitStepModel, PixelCheckStepModel, KeyTapStepModel, LoopStartStepModel, LoopEndStepModel],
+    Union[ClickStepModel, MoveStepModel, WaitStepModel, PixelCheckStepModel, KeyTapStepModel, LoopStartStepModel, LoopEndStepModel],
     Field(discriminator="type"),
 ]
 
@@ -97,7 +104,7 @@ class AutomationProfile(BaseModel):
     loops_count: Annotated[int, Field(ge=1, le=100_000)] = 1
     loops_infinite: bool = False
     action_icon_colors: dict[
-        Literal["click", "wait", "pixel_check", "key_tap", "loop_start", "loop_end"],
+        Literal["click", "move", "wait", "pixel_check", "key_tap", "loop_start", "loop_end"],
         str,
     ] = Field(default_factory=dict)
 
@@ -133,7 +140,7 @@ class AppSettings(BaseModel):
     theme: Literal["dark", "light"] = "dark"
     icon_colors_profile_dependent: bool = False
     action_icon_colors: dict[
-        Literal["click", "wait", "pixel_check", "key_tap", "loop_start", "loop_end"],
+        Literal["click", "move", "wait", "pixel_check", "key_tap", "loop_start", "loop_end"],
         str,
     ] = Field(default_factory=dict)
     profiles: list[AutomationProfile] = Field(default_factory=list)

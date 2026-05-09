@@ -13,10 +13,11 @@ from ace_auto_click.api.models import (
     KeyTapStepModel,
     LoopEndStepModel,
     LoopStartStepModel,
+    MoveStepModel,
     PixelCheckStepModel,
     WaitStepModel,
 )
-from ace_auto_click.automation.actions import ClickStep, KeyTapStep, PixelCheckStep, WaitStep
+from ace_auto_click.automation.actions import ClickStep, KeyTapStep, MoveStep, PixelCheckStep, WaitStep
 from ace_auto_click.automation.engine import SequenceTimelineNode
 
 
@@ -136,10 +137,12 @@ def compile_sequence_timeline(steps: list[ActionStepModel]) -> list[SequenceTime
     return timeline
 
 
-def to_action_step(step: ActionStepModel) -> ClickStep | WaitStep | PixelCheckStep | KeyTapStep:
+def to_action_step(step: ActionStepModel) -> ClickStep | MoveStep | WaitStep | PixelCheckStep | KeyTapStep:
     data: dict[str, Any] = step.model_dump()
     if isinstance(step, ClickStepModel):
         return ClickStep(**data)
+    if isinstance(step, MoveStepModel):
+        return MoveStep(**data)
     if isinstance(step, WaitStepModel):
         return WaitStep(**data)
     if isinstance(step, PixelCheckStepModel):

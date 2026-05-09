@@ -144,6 +144,7 @@ export function SettingsModal({
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       ["click", "Click"],
+                      ["move", "Move"],
                       ["wait", "Wait"],
                       ["pixel_check", "Pixel Match"],
                       ["key_tap", "Key tap"],

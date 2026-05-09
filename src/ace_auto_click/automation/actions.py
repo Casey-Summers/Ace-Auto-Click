@@ -13,7 +13,7 @@ from ace_auto_click.automation.pixels import get_pixel_rgb, rgb_close
 @dataclass
 class ActionStep:
     id: str
-    type: str  # "click", "wait", "pixel_check", "key_tap"
+    type: str  # "click", "move", "wait", "pixel_check", "key_tap"
     enabled: bool = True
     repeats: int = 1
     interval_ms: int = 100  # post-step delay
@@ -53,28 +53,41 @@ class ActionStep:
 
 
 @dataclass
-class ClickStep(ActionStep):
+class PointerTargetStep(ActionStep):
     x: int = 0
     y: int = 0
-    button: str = "left"
-    clicks: int = 1
     random_offset: int = 0
 
-    def _run(self, engine: Any) -> bool:
+    def target_position(self) -> tuple[int, int]:
         rx, ry = self.x, self.y
         if self.random_offset > 0:
             rx += random.randint(-self.random_offset, self.random_offset)
             ry += random.randint(-self.random_offset, self.random_offset)
+        return rx, ry
 
+
+@dataclass
+class ClickStep(PointerTargetStep):
+    button: str = "left"
+    clicks: int = 1
+
+    def _run(self, engine: Any) -> bool:
         btn = mouse.Button.left
         if "right" in self.button:
             btn = mouse.Button.right
         elif "middle" in self.button:
             btn = mouse.Button.middle
 
-        engine._mouse_ctl.position = (rx, ry)
+        engine._mouse_ctl.position = self.target_position()
         for _ in range(self.clicks):
             engine._mouse_ctl.click(btn)
+        return True
+
+
+@dataclass
+class MoveStep(PointerTargetStep):
+    def _run(self, engine: Any) -> bool:
+        engine._mouse_ctl.position = self.target_position()
         return True
 
 

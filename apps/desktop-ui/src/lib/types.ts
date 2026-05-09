@@ -81,7 +81,7 @@ export type AppSettings = {
   simple: SimpleSettings;
   theme: "dark" | "light";
   icon_colors_profile_dependent?: boolean;
-  action_icon_colors?: Partial<Record<"click" | "wait" | "pixel_check" | "key_tap" | "loop_start" | "loop_end", string>>;
+  action_icon_colors?: Partial<Record<"click" | "move" | "wait" | "pixel_check" | "key_tap" | "loop_start" | "loop_end", string>>;
   profiles: AutomationProfile[];
 };
 
@@ -103,6 +103,13 @@ export type ClickStep = BaseStep & {
   y: number;
   button: "left" | "right" | "middle";
   clicks: number;
+  random_offset: number;
+};
+
+export type MoveStep = BaseStep & {
+  type: "move";
+  x: number;
+  y: number;
   random_offset: number;
 };
 
@@ -139,7 +146,7 @@ export type LoopEndStep = BaseStep & {
   loop_id: string;
 };
 
-export type ActionStep = ClickStep | WaitStep | PixelCheckStep | KeyTapStep | LoopStartStep | LoopEndStep;
+export type ActionStep = ClickStep | MoveStep | WaitStep | PixelCheckStep | KeyTapStep | LoopStartStep | LoopEndStep;
 
 export type AutomationProfile = {
   id: string;
@@ -150,7 +157,7 @@ export type AutomationProfile = {
   loops: number;
   loops_count: number;
   loops_infinite: boolean;
-  action_icon_colors?: Partial<Record<"click" | "wait" | "pixel_check" | "key_tap" | "loop_start" | "loop_end", string>>;
+  action_icon_colors?: Partial<Record<"click" | "move" | "wait" | "pixel_check" | "key_tap" | "loop_start" | "loop_end", string>>;
 };
 
 export type PixelSample = {

@@ -8,10 +8,11 @@ from ace_auto_click.api.models import (
     ClickStepModel,
     LoopEndStepModel,
     LoopStartStepModel,
+    MoveStepModel,
     WaitStepModel,
 )
 from ace_auto_click.api.sequence_service import compile_sequence_timeline
-from ace_auto_click.automation.actions import ActionStep, WaitStep
+from ace_auto_click.automation.actions import ActionStep, MoveStep, WaitStep
 
 
 def timeline_signature(steps: list[Any]) -> list[tuple[str, str]]:
@@ -25,6 +26,16 @@ def test_compile_sequence_timeline_preserves_simple_visible_order() -> None:
     ]) == [
         ("click-1", "execute"),
         ("wait-1", "execute"),
+    ]
+
+
+def test_compile_sequence_timeline_includes_move_steps() -> None:
+    assert timeline_signature([
+        MoveStepModel(id="move-1", x=10, y=20),
+        ClickStepModel(id="click-1"),
+    ]) == [
+        ("move-1", "execute"),
+        ("click-1", "execute"),
     ]
 
 
@@ -136,3 +147,24 @@ def test_disabled_action_does_not_emit_completion_event() -> None:
 
     assert step.calls == []
     assert engine.events == []
+
+
+class RecordingMouse:
+    def __init__(self) -> None:
+        self.position: tuple[int, int] | None = None
+        self.clicks: list[Any] = []
+
+    def click(self, button: Any) -> None:
+        self.clicks.append(button)
+
+
+def test_move_step_moves_mouse_without_clicking() -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    step = MoveStep(id="move-1", type="move", x=10, y=20, interval_ms=0)
+
+    assert step.execute(engine) is True
+
+    assert mouse.position == (10, 20)
+    assert mouse.clicks == []
