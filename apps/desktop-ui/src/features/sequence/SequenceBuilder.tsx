@@ -20,6 +20,7 @@ import { CollapsibleSection } from "../../components/CollapsibleSection";
 import { SplitHotkeyActionButton } from "../../components/SplitHotkeyActionButton";
 import { Badge } from "../../components/ui/badge";
 import { Input } from "../../components/ui/input";
+import { displayKeybind } from "../../lib/keybinds";
 import { stepIcon } from "../../lib/steps";
 import type { ActionStep, ExecutionEvent, LoopStartStep, Rgb } from "../../lib/types";
 
@@ -97,13 +98,13 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
     const parts: string[] = [];
     if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
     if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    return { title: `Tap ${step.key}`, subtext: parts.join(" / ") };
+    return { title: `Tap ${displayKeybind(step.key)}`, subtext: parts.join(" / ") };
   }
   if (step.type === "key_hold") {
     const parts: string[] = [];
     if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
     if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    return { title: `Hold ${step.key} for ${formatMs(step.hold_ms)}`, subtext: parts.join(" / ") };
+    return { title: `Hold ${displayKeybind(step.key)} for ${formatMs(step.hold_ms)}`, subtext: parts.join(" / ") };
   }
   if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop Start infinite" : `Loop Start x${loopDisplayCount(step)}`, subtext: "" };
   return { title: "Loop End", subtext: "" };

@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { SequenceBuilder } from "./SequenceBuilder";
@@ -58,6 +58,32 @@ function row(container: HTMLElement, stepId: string): HTMLElement {
 }
 
 describe("SequenceBuilder execution flashes", () => {
+  it("renders sanitized keybind row titles", () => {
+    render(
+      <SequenceBuilder
+        steps={[
+          { ...baseStep, id: "tap-1", type: "key_tap", key: "btnm4" },
+          { ...baseStep, id: "hold-1", type: "key_hold", key: "\x01", hold_ms: 1500 }
+        ]}
+        loops={1}
+        loopsCount={1}
+        loopsInfinite={false}
+        running={false}
+        runHotkey="F8"
+        selectedId=""
+        executionEvents={[]}
+        onSelect={vi.fn()}
+        onLoopsChange={vi.fn()}
+        onRunToggle={vi.fn()}
+        onStepsChange={vi.fn()}
+        onRunHotkeyClick={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Tap BTNM 4")).toBeInTheDocument();
+    expect(screen.getByText("Hold Unset for 1.5s")).toBeInTheDocument();
+  });
+
   it("success-flashes a row from a step completion event", async () => {
     const { container } = renderBuilder([event("click-1", "step_complete")]);
 

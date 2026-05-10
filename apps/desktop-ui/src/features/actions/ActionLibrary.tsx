@@ -24,10 +24,10 @@ export function ActionLibrary({ onAdd }: { onAdd: (type: ActionStep["type"]) => 
           <Crosshair size={16} /> Pixel Match
         </Button>
         <Button variant="default" className="justify-start" onClick={() => onAdd("key_tap")}>
-          <Keyboard size={16} /> Key tap
+          <Keyboard size={16} /> Keybind Tap
         </Button>
         <Button variant="default" className="justify-start" onClick={() => onAdd("key_hold")}>
-          <Keyboard size={16} /> Key hold
+          <Keyboard size={16} /> Keybind Hold
         </Button>
         <Button variant="default" className="justify-start" onClick={() => onAdd("loop_start")}>
           <Repeat size={16} /> Loop

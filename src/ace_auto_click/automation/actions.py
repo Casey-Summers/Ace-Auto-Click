@@ -307,6 +307,13 @@ class PixelCheckStep(ActionStep):
 class KeyTapStep(ActionStep):
     key: str = "space"
 
+    def _mouse_button(self) -> Any | None:
+        normalized = (self.key or "").strip().lower().replace(" ", "")
+        button_attr = {"btnm4": "x1", "mouse4": "x1", "button.x1": "x1", "btnm5": "x2", "mouse5": "x2", "button.x2": "x2"}.get(normalized)
+        if not button_attr:
+            return None
+        return getattr(mouse.Button, button_attr, f"Button.{button_attr}")
+
     def _parse_combo(self) -> tuple[list[keyboard.Key], str | keyboard.Key]:
         parts = [part.strip().lower() for part in (self.key or "").split("+") if part.strip()]
         mod_map: dict[str, keyboard.Key] = {"ctrl": keyboard.Key.ctrl, "shift": keyboard.Key.shift, "alt": keyboard.Key.alt}
@@ -322,6 +329,11 @@ class KeyTapStep(ActionStep):
         return mods, base
 
     def _run(self, engine: Any) -> bool:
+        mouse_button = self._mouse_button()
+        if mouse_button is not None:
+            engine._mouse_ctl.click(mouse_button)
+            return True
+
         mods, base = self._parse_combo()
         for mod in mods:
             engine._kb_ctl.press(mod)
@@ -338,6 +350,13 @@ class KeyHoldStep(ActionStep):
     key: str = "space"
     hold_ms: int = 300
 
+    def _mouse_button(self) -> Any | None:
+        normalized = (self.key or "").strip().lower().replace(" ", "")
+        button_attr = {"btnm4": "x1", "mouse4": "x1", "button.x1": "x1", "btnm5": "x2", "mouse5": "x2", "button.x2": "x2"}.get(normalized)
+        if not button_attr:
+            return None
+        return getattr(mouse.Button, button_attr, f"Button.{button_attr}")
+
     def _parse_combo(self) -> tuple[list[keyboard.Key], str | keyboard.Key]:
         parts = [part.strip().lower() for part in (self.key or "").split("+") if part.strip()]
         mod_map: dict[str, keyboard.Key] = {"ctrl": keyboard.Key.ctrl, "shift": keyboard.Key.shift, "alt": keyboard.Key.alt}
@@ -353,6 +372,20 @@ class KeyHoldStep(ActionStep):
         return mods, base
 
     def _run(self, engine: Any) -> bool:
+        mouse_button = self._mouse_button()
+        if mouse_button is not None:
+            engine._mouse_ctl.press(mouse_button)
+            try:
+                delay_s = max(0, int(self.hold_ms)) / 1000.0
+                start = time.perf_counter()
+                while time.perf_counter() - start < delay_s:
+                    if engine._stop_evt.is_set():
+                        return False
+                    time.sleep(0.005)
+                return True
+            finally:
+                engine._mouse_ctl.release(mouse_button)
+
         mods, resolved = self._parse_combo()
         for mod in mods:
             engine._kb_ctl.press(mod)

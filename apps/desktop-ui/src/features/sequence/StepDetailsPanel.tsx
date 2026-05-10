@@ -5,6 +5,7 @@ import { CollapsibleSection } from "../../components/CollapsibleSection";
 import { Keycap } from "../../components/keycap";
 import { Button } from "../../components/ui/button";
 import { Input, Select } from "../../components/ui/input";
+import { displayKeybind } from "../../lib/keybinds";
 import type { ActionStep, NormalProfileSettings, Point, Rgb } from "../../lib/types";
 
 function FieldRow({ title, info, children }: { title: string; info: string; children: ReactNode }) {
@@ -150,6 +151,7 @@ export function NormalDetailsPanel({ normal, onChange }: { normal: NormalProfile
 export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPosition, pickingKey, pixelLiveRgb, samplingPixel, onChange, onSamplePixel, onPickClickPosition, onPickKey, onDuplicate, onDelete }: { step?: ActionStep; pickCursorPosition?: Point | null; pickingClickPosition?: boolean; pickingKey?: boolean; pixelLiveRgb?: Rgb | null; samplingPixel?: boolean; onChange: (patch: Partial<ActionStep>) => void; onSamplePixel: () => void; onPickClickPosition: () => void; onPickKey: () => void; onDuplicate: () => void; onDelete: () => void; }) {
   if (!step) return <CollapsibleSection title="Action Settings" defaultOpen><p className="text-sm text-muted-foreground">Select an action to edit settings, or add one from Action Library.</p></CollapsibleSection>;
   const isLoopMarker = step.type === "loop_start" || step.type === "loop_end";
+  const keybindDisplay = step.type === "key_tap" || step.type === "key_hold" ? displayKeybind(step.key) : "";
   return (
     <CollapsibleSection title="Action Settings" className="flex min-h-0 flex-1 flex-col overflow-hidden" contentClassName="min-h-0 flex-1 overflow-hidden">
       <div className="flex max-h-full min-h-0 flex-col gap-4">
@@ -174,14 +176,14 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
           ) : null}
           {step.type === "key_hold" || step.type === "key_tap" ? (
             <CaptureActionRow
-              title="Key Picker"
-              info="Waits for the next key input and records the first key with optional modifiers."
+              title="Keybind Picker"
+              info="Waits for the next keyboard key or supported mouse side button and records the first keybind input."
               waiting={pickingKey}
-              idleLabel="Change key"
-              waitingLabel="Press a key..."
+              idleLabel="Change keybind"
+              waitingLabel="Press key or side button..."
               pendingHint="Esc cancels"
-              value={step.key || "unset"}
-              valuePreview={<Keycap>{step.key || "unset"}</Keycap>}
+              value={keybindDisplay}
+              valuePreview={<Keycap>{keybindDisplay}</Keycap>}
               onCapture={onPickKey}
             />
           ) : null}

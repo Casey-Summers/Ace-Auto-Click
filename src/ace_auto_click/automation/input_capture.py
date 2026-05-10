@@ -32,6 +32,8 @@ class CapturedInput:
 VK_LBUTTON = 0x01
 VK_RBUTTON = 0x02
 VK_MBUTTON = 0x04
+VK_XBUTTON1 = 0x05
+VK_XBUTTON2 = 0x06
 VK_ESCAPE = 0x1B
 
 
@@ -52,6 +54,76 @@ def _windows_cancel_requested(cancel_keys: set[str] | None) -> bool:
         return False
     normalized = {value.lower().removeprefix("key.") for value in cancel_keys}
     return "esc" in normalized and _button_down(VK_ESCAPE)
+
+
+def _side_button_key_name(button: object) -> str | None:
+    value = str(button).lower()
+    if value in {"button.x1", "x1", "btnm4", "mouse4", "mouse_4"}:
+        return "btnm4"
+    if value in {"button.x2", "x2", "btnm5", "mouse5", "mouse_5"}:
+        return "btnm5"
+    return None
+
+
+def _control_char_to_key(char: str) -> str | None:
+    if len(char) != 1:
+        return None
+    codepoint = ord(char)
+    if 1 <= codepoint <= 26:
+        return chr(codepoint + 96)
+    return None
+
+
+def _canonical_key_name(key: keyboard.Key | keyboard.KeyCode) -> str | None:
+    char = getattr(key, "char", None)
+    if char:
+        control_key = _control_char_to_key(str(char))
+        if control_key:
+            return control_key
+        if str(char).isprintable():
+            return str(char).lower()
+        return None
+    value = str(key).lower()
+    if value.startswith("key."):
+        return value.removeprefix("key.")
+    return None
+
+
+def _format_chord(modifiers: set[str], base: str) -> str:
+    modifier_order = {"ctrl": 0, "alt": 1, "shift": 2}
+    ordered_mods = sorted(modifiers, key=lambda item: modifier_order.get(item, 99))
+    return "+".join([*ordered_mods, base]) if ordered_mods else base
+
+
+def _poll_windows_keybind_mouse_button(
+    timeout_s: float,
+    cancel_keys: set[str] | None = None,
+    stop_event: threading.Event | None = None,
+    arm_delay_s: float = 0.18,
+) -> CapturedInput:
+    started_at = time.monotonic()
+    armed_at = started_at + max(0.0, arm_delay_s)
+    buttons = (
+        (VK_XBUTTON1, "btnm4"),
+        (VK_XBUTTON2, "btnm5"),
+    )
+    was_down = {vk_code: _button_down(vk_code) for vk_code, _name in buttons}
+
+    while True:
+        if stop_event is not None and stop_event.is_set():
+            raise InputCaptureCancelledError("Input capture cancelled.")
+        if _windows_cancel_requested(cancel_keys):
+            raise InputCaptureCancelledError("Input capture cancelled.")
+        if time.monotonic() - started_at >= timeout_s:
+            raise InputCaptureTimeoutError("Timed out waiting for keybind input.")
+
+        for vk_code, key_name in buttons:
+            down = _button_down(vk_code)
+            if time.monotonic() >= armed_at and down and not was_down[vk_code]:
+                return CapturedInput(kind="key_press", key=key_name)
+            was_down[vk_code] = down
+
+        time.sleep(0.01)
 
 
 def _poll_windows_mouse_click(
@@ -255,7 +327,6 @@ class InputCaptureSession:
 
     def start_key_press(self) -> None:
         modifiers: set[str] = set()
-        modifier_order = {"ctrl": 0, "alt": 1, "shift": 2}
         modifier_alias = {
             "key.ctrl": "ctrl",
             "key.ctrl_l": "ctrl",
@@ -269,14 +340,6 @@ class InputCaptureSession:
             "key.alt_gr": "alt",
         }
 
-        def key_name(key: keyboard.Key | keyboard.KeyCode) -> str | None:
-            if getattr(key, "char", None):
-                return str(key.char).lower()
-            value = str(key).lower()
-            if value.startswith("key."):
-                return value.removeprefix("key.")
-            return None
-
         def on_press(key: keyboard.Key | keyboard.KeyCode) -> bool | None:
             if time.monotonic() < self._armed_at:
                 return None
@@ -288,12 +351,23 @@ class InputCaptureSession:
             if alias:
                 modifiers.add(alias)
                 return None
-            base = key_name(key)
+            base = _canonical_key_name(key)
             if not base:
                 return None
-            ordered_mods = sorted(modifiers, key=lambda item: modifier_order.get(item, 99))
-            chord = "+".join([*ordered_mods, base]) if ordered_mods else base
-            self.complete(CapturedInput(kind="key_press", key=chord))
+            if _control_char_to_key(str(getattr(key, "char", ""))) == base:
+                modifiers.add("ctrl")
+            self.complete(CapturedInput(kind="key_press", key=_format_chord(modifiers, base)))
+            return False
+
+        def on_click(x: int, y: int, button: mouse.Button, pressed: bool) -> bool | None:
+            if time.monotonic() < self._armed_at:
+                return None
+            if not pressed:
+                return None
+            key_name = _side_button_key_name(button)
+            if not key_name:
+                return None
+            self.complete(CapturedInput(kind="key_press", key=key_name))
             return False
 
         def on_release(key: keyboard.Key | keyboard.KeyCode) -> bool | None:
@@ -305,10 +379,30 @@ class InputCaptureSession:
 
         self._key_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
         self._key_listener.start()
+        with self._lock:
+            pending = self._status == "pending"
+        if not pending:
+            return
+        if _is_windows_polling_available():
+            self._worker = threading.Thread(target=self._run_windows_keybind_mouse_poll, name=f"input-capture-{self.id}", daemon=True)
+            self._worker.start()
+        else:
+            self._mouse_listener = mouse.Listener(on_click=on_click)
+            self._mouse_listener.start()
 
     def _run_windows_mouse_poll(self) -> None:
         try:
             self.complete(_poll_windows_mouse_click(self._timeout_s, self._cancel_keys, self._stop_event))
+        except InputCaptureCancelledError as exc:
+            self.cancel(str(exc))
+        except InputCaptureTimeoutError as exc:
+            self.fail(str(exc))
+        except Exception as exc:
+            self.fail(str(exc))
+
+    def _run_windows_keybind_mouse_poll(self) -> None:
+        try:
+            self.complete(_poll_windows_keybind_mouse_button(self._timeout_s, self._cancel_keys, self._stop_event))
         except InputCaptureCancelledError as exc:
             self.cancel(str(exc))
         except InputCaptureTimeoutError as exc:

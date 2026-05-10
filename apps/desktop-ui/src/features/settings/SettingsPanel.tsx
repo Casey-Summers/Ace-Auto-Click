@@ -148,8 +148,8 @@ export function SettingsModal({
                       ["drag", "Drag"],
                       ["wait", "Wait"],
                       ["pixel_check", "Pixel Match"],
-                      ["key_tap", "Key tap"],
-                      ["key_hold", "Key hold"],
+                      ["key_tap", "Keybind Tap"],
+                      ["key_hold", "Keybind Hold"],
                       ["loop_start", "Loop start"],
                       ["loop_end", "Loop end"]
                     ].map(([key, label]) => (

@@ -14,7 +14,7 @@ from ace_auto_click.api.models import (
     WaitStepModel,
 )
 from ace_auto_click.api.sequence_service import compile_sequence_timeline
-from ace_auto_click.automation.actions import ActionStep, DragStep, KeyHoldStep, MoveStep, WaitStep
+from ace_auto_click.automation.actions import ActionStep, DragStep, KeyHoldStep, KeyTapStep, MoveStep, WaitStep
 
 
 def timeline_signature(steps: list[Any]) -> list[tuple[str, str]]:
@@ -278,3 +278,24 @@ def test_key_hold_step_presses_and_releases_once() -> None:
     assert step.execute(engine) is True
     assert len(kb.presses) == 1
     assert len(kb.releases) == 1
+
+
+def test_key_tap_step_clicks_side_mouse_button() -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    step = KeyTapStep(id="tap-mouse-4", type="key_tap", key="btnm4", interval_ms=0)
+
+    assert step.execute(engine) is True
+    assert mouse.clicks == [step._mouse_button()]
+
+
+def test_key_hold_step_holds_side_mouse_button() -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    step = KeyHoldStep(id="hold-mouse-5", type="key_hold", key="btnm5", hold_ms=1, interval_ms=0)
+
+    assert step.execute(engine) is True
+    assert mouse.presses == [step._mouse_button()]
+    assert mouse.releases == [step._mouse_button()]

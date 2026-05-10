@@ -63,6 +63,8 @@ describe("App", () => {
     expect(screen.getByText("normal")).toBeInTheDocument();
     expect(screen.getByText("advanced")).toBeInTheDocument();
     expect(screen.getByText("Action Library")).toBeInTheDocument();
+    expect(screen.getByText("Keybind Tap")).toBeInTheDocument();
+    expect(screen.getByText("Keybind Hold")).toBeInTheDocument();
     expect(screen.getByText("Action Settings")).toBeInTheDocument();
     expect(screen.queryByText("Selected Step")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Profile name")).toBeInTheDocument();
@@ -194,21 +196,21 @@ describe("App", () => {
     expect(await screen.findByText("Position picker cancelled.")).toBeInTheDocument();
   });
 
-  it("shows current key inside the capture button for key actions", async () => {
+  it("shows current keybind inside the capture button for keybind actions", async () => {
     render(<App />);
     await screen.findByText(/Connected to Ace Auto Click/);
-    fireEvent.click(screen.getByRole("button", { name: /Key tap/i }));
-    expect(screen.getByRole("button", { name: /Change key, current space/i })).toBeInTheDocument();
-    expect(screen.getByText("space")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Keybind Tap/i }));
+    expect(screen.getByRole("button", { name: /Change keybind, current SPACE/i })).toBeInTheDocument();
+    expect(screen.getByText("SPACE")).toBeInTheDocument();
     expect(screen.queryByText(/Capture Key Input/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Key preview:/i)).not.toBeInTheDocument();
   });
 
-  it("keeps key hold preview inside the capture button", async () => {
+  it("keeps keybind hold preview inside the capture button", async () => {
     render(<App />);
     await screen.findByText(/Connected to Ace Auto Click/);
-    fireEvent.click(screen.getByRole("button", { name: /Key hold/i }));
-    expect(screen.getByRole("button", { name: /Change key, current space/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Keybind Hold/i }));
+    expect(screen.getByRole("button", { name: /Change keybind, current SPACE/i })).toBeInTheDocument();
     expect(screen.queryByText(/Key preview:/i)).not.toBeInTheDocument();
   });
 
@@ -220,13 +222,26 @@ describe("App", () => {
 
     render(<App />);
     await screen.findByText(/Connected to Ace Auto Click/);
-    fireEvent.click(screen.getByRole("button", { name: /Key tap/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Change key, current space/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Keybind Tap/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Change keybind, current SPACE/i }));
 
-    expect(await screen.findByText("Press a key...")).toBeInTheDocument();
+    expect(await screen.findByText("Press key or side button...")).toBeInTheDocument();
     expect(screen.getByText("Esc cancels")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: /Change key, current ctrl\+a/i })).toBeInTheDocument());
-    expect(screen.getByText("ctrl+a")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: /Change keybind, current CTRL \+ A/i })).toBeInTheDocument());
+    expect(screen.getByText("CTRL + A")).toBeInTheDocument();
+  });
+
+  it("displays captured side mouse buttons as keybind labels", async () => {
+    apiMock.startKeyPressCapture.mockResolvedValue({ id: "capture-key-1", status: "pending", result: null, error: null });
+    apiMock.inputCaptureStatus.mockResolvedValue({ id: "capture-key-1", status: "complete", result: { kind: "key_press", key: "btnm4" }, error: null });
+
+    render(<App />);
+    await screen.findByText(/Connected to Ace Auto Click/);
+    fireEvent.click(screen.getByRole("button", { name: /Keybind Tap/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Change keybind, current SPACE/i }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /Change keybind, current BTNM 4/i })).toBeInTheDocument());
+    expect(screen.getByText("BTNM 4")).toBeInTheDocument();
   });
 
   it("suppresses ctrl+a default behavior while key capture is pending", async () => {
@@ -234,9 +249,9 @@ describe("App", () => {
     apiMock.inputCaptureStatus.mockImplementation(async (id: string) => ({ id, status: "pending", result: null, error: null }));
     render(<App />);
     await screen.findByText(/Connected to Ace Auto Click/);
-    fireEvent.click(screen.getByRole("button", { name: /Key tap/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Change key, current space/i }));
-    expect(await screen.findByText("Press a key...")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Keybind Tap/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Change keybind, current SPACE/i }));
+    expect(await screen.findByText("Press key or side button...")).toBeInTheDocument();
     const event = new KeyboardEvent("keydown", { key: "a", ctrlKey: true, cancelable: true });
     window.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);

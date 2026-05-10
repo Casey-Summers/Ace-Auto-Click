@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "../lib/api";
 import { defaultProfile, defaultSettings } from "../lib/defaults";
+import { displayKeybind } from "../lib/keybinds";
 import { createStep } from "../lib/steps";
 import { defaultState, normalizeSettings } from "../lib/settings";
 import type { ActionStep, AppMode, AppSettings, AutomationProfile, ExecutionEvent, Point, ProfileFile, Rgb, RuntimeState } from "../lib/types";
@@ -263,7 +264,7 @@ export function useAppController() {
         settingsRef.current = next;
         return next;
       });
-      setLog((items) => [`Captured key ${key}.`, ...items]);
+      setLog((items) => [`Captured keybind ${displayKeybind(key)}.`, ...items]);
     } finally {
       setPickingKeyStepId("");
     }

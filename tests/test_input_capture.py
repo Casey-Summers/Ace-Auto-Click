@@ -196,6 +196,71 @@ def test_key_capture_session_captures_modifiers_in_canonical_order(monkeypatch: 
     assert snap.result.key == "ctrl+alt+shift+a"
 
 
+def test_key_capture_session_normalizes_ctrl_control_character(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeKeyListener:
+        def __init__(self, on_press, on_release):
+            self.on_press = on_press
+            self.on_release = on_release
+
+        def start(self) -> None:
+            self.on_press(input_capture.keyboard.Key.ctrl_l)
+            self.on_press(type("K", (), {"char": "\x01"})())
+
+        def stop(self) -> None:
+            return None
+
+        def join(self, timeout=None) -> None:
+            return None
+
+    monkeypatch.setattr(input_capture, "_is_windows_polling_available", lambda: False)
+    monkeypatch.setattr(input_capture.keyboard, "Listener", FakeKeyListener)
+    session = input_capture.InputCaptureSession("key-ctrl", timeout_s=1, cancel_keys={"esc"})
+    session.start_key_press()
+    snap = session.snapshot()
+    assert snap.status == "complete"
+    assert snap.result is not None
+    assert snap.result.key == "ctrl+a"
+
+
+def test_key_capture_session_captures_side_mouse_button(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeKeyListener:
+        def __init__(self, on_press, on_release):
+            self.on_press = on_press
+            self.on_release = on_release
+
+        def start(self) -> None:
+            return None
+
+        def stop(self) -> None:
+            return None
+
+        def join(self, timeout=None) -> None:
+            return None
+
+    class FakeMouseListener:
+        def __init__(self, on_click):
+            self.on_click = on_click
+
+        def start(self) -> None:
+            self.on_click(0, 0, "Button.x1", True)
+
+        def stop(self) -> None:
+            return None
+
+        def join(self, timeout=None) -> None:
+            return None
+
+    monkeypatch.setattr(input_capture, "_is_windows_polling_available", lambda: False)
+    monkeypatch.setattr(input_capture.keyboard, "Listener", FakeKeyListener)
+    monkeypatch.setattr(input_capture.mouse, "Listener", FakeMouseListener)
+    session = input_capture.InputCaptureSession("key-mouse", timeout_s=1, cancel_keys={"esc"})
+    session.start_key_press()
+    snap = session.snapshot()
+    assert snap.status == "complete"
+    assert snap.result is not None
+    assert snap.result.key == "btnm4"
+
+
 def test_key_capture_session_ignores_modifier_only_until_base_key(monkeypatch: pytest.MonkeyPatch) -> None:
     holder: dict[str, object] = {}
 
