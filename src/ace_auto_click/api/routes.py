@@ -230,6 +230,14 @@ def start_mouse_click_capture() -> dict[str, Any]:
     return _capture_snapshot_payload(snapshot)
 
 
+@router.post("/input-capture/key-press/start")
+def start_key_press_capture() -> dict[str, Any]:
+    snapshot = input_capture.capture_manager.start_key_press(timeout_s=30, cancel_keys={"esc"})
+    if snapshot.status == "failed":
+        raise HTTPException(status_code=500, detail=snapshot.error or "Key capture could not start.")
+    return _capture_snapshot_payload(snapshot)
+
+
 @router.get("/input-capture/{session_id}")
 def input_capture_status(session_id: str) -> dict[str, Any]:
     snapshot = input_capture.capture_manager.get(session_id)

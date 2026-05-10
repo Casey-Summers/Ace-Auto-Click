@@ -1,6 +1,8 @@
 import { Copy, Info, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
+import { CaptureButton } from "../../components/CaptureButton";
 import { CollapsibleSection } from "../../components/CollapsibleSection";
+import { Keycap } from "../../components/keycap";
 import { Button } from "../../components/ui/button";
 import { Input, Select } from "../../components/ui/input";
 import type { ActionStep, NormalProfileSettings, Point, Rgb } from "../../lib/types";
@@ -105,6 +107,24 @@ function toggleDragButton(buttons: Array<"left" | "right" | "middle">, button: "
   return next.length > 0 ? next : [button];
 }
 
+function CaptureActionRow({ title, info, waiting, idleLabel, waitingLabel, pendingHint, value, valuePreview, ariaLabel, onCapture }: { title: string; info: string; waiting?: boolean; idleLabel: string; waitingLabel?: string; pendingHint?: string; value?: string; valuePreview?: ReactNode; ariaLabel?: string; onCapture: () => void }) {
+  return (
+    <FieldRow title={title} info={info}>
+      <CaptureButton
+        idleText={idleLabel}
+        pendingText={waitingLabel}
+        pendingHint={pendingHint}
+        waiting={waiting}
+        disabled={Boolean(waiting)}
+        value={value}
+        valuePreview={valuePreview}
+        ariaLabel={ariaLabel}
+        onCapture={onCapture}
+      />
+    </FieldRow>
+  );
+}
+
 export function NormalDetailsPanel({ normal, onChange }: { normal: NormalProfileSettings; onChange: (patch: Partial<NormalProfileSettings>) => void; }) {
   return (
     <CollapsibleSection title="Normal Profile">
@@ -127,7 +147,7 @@ export function NormalDetailsPanel({ normal, onChange }: { normal: NormalProfile
   );
 }
 
-export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPosition, pixelLiveRgb, samplingPixel, onChange, onSamplePixel, onPickClickPosition, onDuplicate, onDelete }: { step?: ActionStep; pickCursorPosition?: Point | null; pickingClickPosition?: boolean; pixelLiveRgb?: Rgb | null; samplingPixel?: boolean; onChange: (patch: Partial<ActionStep>) => void; onSamplePixel: () => void; onPickClickPosition: () => void; onDuplicate: () => void; onDelete: () => void; }) {
+export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPosition, pickingKey, pixelLiveRgb, samplingPixel, onChange, onSamplePixel, onPickClickPosition, onPickKey, onDuplicate, onDelete }: { step?: ActionStep; pickCursorPosition?: Point | null; pickingClickPosition?: boolean; pickingKey?: boolean; pixelLiveRgb?: Rgb | null; samplingPixel?: boolean; onChange: (patch: Partial<ActionStep>) => void; onSamplePixel: () => void; onPickClickPosition: () => void; onPickKey: () => void; onDuplicate: () => void; onDelete: () => void; }) {
   if (!step) return <CollapsibleSection title="Action Settings" defaultOpen><p className="text-sm text-muted-foreground">Select an action to edit settings, or add one from Action Library.</p></CollapsibleSection>;
   const isLoopMarker = step.type === "loop_start" || step.type === "loop_end";
   return (
@@ -144,14 +164,29 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
           </FieldRow>
 
           {step.type === "click" || step.type === "move" || step.type === "drag" ? (
-            <FieldRow title="Position Picker" info="Waits for the next click and records its exact screen location for this action.">
-              <Button variant={pickingClickPosition ? "success" : "default"} onClick={onPickClickPosition} disabled={pickingClickPosition}>
-                {pickingClickPosition ? "Waiting for location" : step.type === "click" ? "Pick Click Position" : step.type === "move" ? "Pick Move Position" : "Pick Drag Start"}
-              </Button>
-            </FieldRow>
+            <CaptureActionRow
+              title="Position Picker"
+              info="Waits for the next click and records its exact screen location for this action."
+              waiting={pickingClickPosition}
+              idleLabel={step.type === "click" ? "Pick Click Position" : step.type === "move" ? "Pick Move Position" : "Pick Drag Start"}
+              onCapture={onPickClickPosition}
+            />
+          ) : null}
+          {step.type === "key_hold" || step.type === "key_tap" ? (
+            <CaptureActionRow
+              title="Key Picker"
+              info="Waits for the next key input and records the first key with optional modifiers."
+              waiting={pickingKey}
+              idleLabel="Change key"
+              waitingLabel="Press a key..."
+              pendingHint="Esc cancels"
+              value={step.key || "unset"}
+              valuePreview={<Keycap>{step.key || "unset"}</Keycap>}
+              onCapture={onPickKey}
+            />
           ) : null}
 
-          {step.type === "pixel_check" ? <><FieldRow title="Pixel Sampler" info="Arms pixel sampling; next click captures current color at that location."><Button variant={samplingPixel ? "success" : "default"} onClick={onSamplePixel} disabled={samplingPixel}>{samplingPixel ? "Waiting for pixel sample" : "Sample Pixel"}</Button></FieldRow><FieldRow title="Mismatch Mode" info="Action to take when color does not match."><Select value={step.mode} onChange={(event) => onChange({ mode: event.target.value as "wait_until_match" | "stop_if_mismatch" | "skip_if_mismatch" })}><option value="wait_until_match">wait until match</option><option value="stop_if_mismatch">stop if mismatch</option><option value="skip_if_mismatch">skip if mismatch</option></Select></FieldRow></> : null}
+          {step.type === "pixel_check" ? <><CaptureActionRow title="Pixel Sampler" info="Arms pixel sampling; next click captures current color at that location." waiting={samplingPixel} idleLabel="Sample Pixel" onCapture={onSamplePixel} /><FieldRow title="Mismatch Mode" info="Action to take when color does not match."><Select value={step.mode} onChange={(event) => onChange({ mode: event.target.value as "wait_until_match" | "stop_if_mismatch" | "skip_if_mismatch" })}><option value="wait_until_match">wait until match</option><option value="stop_if_mismatch">stop if mismatch</option><option value="skip_if_mismatch">skip if mismatch</option></Select></FieldRow></> : null}
 
           {!isLoopMarker ? <FieldRow title="Repeat Count" info="Number of times this step repeats before the next step."><Input type="number" value={step.repeats} onChange={(event) => onChange({ repeats: Number(event.target.value) })} /></FieldRow> : null}
           {!isLoopMarker ? <FieldRow title="Base Delay (ms)" info="Delay after each execution of this step."><Input type="number" value={step.interval_ms} onChange={(event) => onChange({ interval_ms: Number(event.target.value) })} /></FieldRow> : null}
@@ -167,7 +202,7 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
 
           {step.type === "pixel_check" ? <FieldRow title="Tolerance" info="Allowed RGB distance from expected color."><Input type="number" value={step.tolerance} onChange={(event) => onChange({ tolerance: Number(event.target.value) })} /></FieldRow> : null}
 
-          {step.type === "key_tap" ? <><FieldRow title="Key" info="Keyboard key to tap."><Input value={step.key} onChange={(event) => onChange({ key: event.target.value })} /></FieldRow><p className="text-xs text-muted-foreground">Key preview: <kbd className="rounded border border-border bg-background/70 px-1.5 py-0.5 font-mono text-xs">{step.key || "unset"}</kbd></p></> : null}
+          {step.type === "key_hold" ? <FieldRow title="Hold Duration (ms)" info="How long to keep the key pressed before release."><Input type="number" value={step.hold_ms} onChange={(event) => onChange({ hold_ms: Number(event.target.value) })} /></FieldRow> : null}
 
           {step.type === "loop_start" ? <><FieldRow title="Loop Count" info="Number of loop iterations when not infinite."><Input type="number" value={step.loop_count} disabled={step.loop_infinite} onChange={(event) => onChange({ loop_count: Math.max(1, Number(event.target.value) || 1) })} /></FieldRow><FieldRow title="Infinite Loop" info="Run loop body indefinitely until stopped."><label className="flex items-center justify-between rounded-lg bg-background/70 p-2 text-sm">Enable<input type="checkbox" checked={step.loop_infinite} onChange={(event) => onChange({ loop_infinite: event.target.checked })} /></label></FieldRow><p className="text-xs text-muted-foreground">Loop summary: {step.loop_infinite ? "Infinite iterations until stopped." : `${step.loop_count} iterations.`}</p></> : null}
         </div>

@@ -26,6 +26,9 @@ export function ActionLibrary({ onAdd }: { onAdd: (type: ActionStep["type"]) => 
         <Button variant="default" className="justify-start" onClick={() => onAdd("key_tap")}>
           <Keyboard size={16} /> Key tap
         </Button>
+        <Button variant="default" className="justify-start" onClick={() => onAdd("key_hold")}>
+          <Keyboard size={16} /> Key hold
+        </Button>
         <Button variant="default" className="justify-start" onClick={() => onAdd("loop_start")}>
           <Repeat size={16} /> Loop
         </Button>

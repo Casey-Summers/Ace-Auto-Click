@@ -61,6 +61,7 @@ export const defaultSettings: AppSettings = {
     wait: "#55B3FF",
     pixel_check: "#55B3FF",
     key_tap: "#55B3FF",
+    key_hold: "#55B3FF",
     loop_start: "#55B3FF",
     loop_end: "#55B3FF"
   },

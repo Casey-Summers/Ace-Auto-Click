@@ -23,6 +23,7 @@
   --icon-wait: #55b3ff;
   --icon-pixel: #55b3ff;
   --icon-key: #55b3ff;
+  --icon-key-hold: #55b3ff;
   --icon-loop-start: #55b3ff;
   --icon-loop-end: #55b3ff;
   --loop-rail: 240 2% 70%;
@@ -114,6 +115,7 @@ input[type="number"] {
 .step-icon[data-step-type="wait"] { color: var(--icon-wait); }
 .step-icon[data-step-type="pixel_check"] { color: var(--icon-pixel); }
 .step-icon[data-step-type="key_tap"] { color: var(--icon-key); }
+.step-icon[data-step-type="key_hold"] { color: var(--icon-key-hold); }
 .step-icon[data-step-type="loop_start"] { color: var(--icon-loop-start); }
 .step-icon[data-step-type="loop_end"] { color: var(--icon-loop-end); }
 

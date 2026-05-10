@@ -53,6 +53,7 @@ class ClickEngine:
         self._execution_seq = 0
         self._execution_run_id = 0
         self._execution_lock = threading.Lock()
+        self._held_keys: set[Any] = set()
 
     def emit_execution_event(self, step_id: str, step_type: str, phase: str) -> None:
         with self._execution_lock:
@@ -81,6 +82,22 @@ class ClickEngine:
     def stop(self) -> None:
         """Stops the current thread without blocking the UI."""
         self._stop_evt.set()
+        self._release_held_keys()
+
+    def _register_held_key(self, key: Any) -> None:
+        self._held_keys.add(key)
+
+    def _unregister_held_key(self, key: Any) -> None:
+        self._held_keys.discard(key)
+
+    def _release_held_keys(self) -> None:
+        for key in list(self._held_keys):
+            try:
+                self._kb_ctl.release(key)
+            except Exception:
+                pass
+            finally:
+                self._held_keys.discard(key)
 
     def start_clicking(
         self, settings: ClickSettings, pixel_cond: PixelCondition
@@ -133,6 +150,7 @@ class ClickEngine:
             except Exception as e:
                 self._on_status(f"Error: {e}")
             finally:
+                self._release_held_keys()
                 self._on_status("Simple Mode: OFF")
                 self._active_thread = None
 
@@ -174,6 +192,7 @@ class ClickEngine:
             except Exception as e:
                 self._on_status(f"Error: {e}")
             finally:
+                self._release_held_keys()
                 self.current_step_id = None
                 self.current_step_state = None
                 self._on_status("Advanced Mode: OFF")
@@ -216,6 +235,7 @@ class ClickEngine:
             except Exception as e:
                 self._on_status(f"Error: {e}")
             finally:
+                self._release_held_keys()
                 self.current_step_id = None
                 self.current_step_state = None
                 self._on_status("Advanced Mode: OFF")
@@ -259,6 +279,7 @@ class ClickEngine:
                         # Execution logic (mouse/kb)
                         self._execute_event(ev)
             finally:
+                self._release_held_keys()
                 self._on_status("Macro: OFF")
                 self._active_thread = None
 

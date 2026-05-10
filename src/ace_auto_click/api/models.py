@@ -106,6 +106,12 @@ class KeyTapStepModel(BaseStep):
     key: str = "space"
 
 
+class KeyHoldStepModel(BaseStep):
+    type: Literal["key_hold"] = "key_hold"
+    key: str = "space"
+    hold_ms: Annotated[int, Field(ge=0, le=60_000)] = 300
+
+
 class LoopStartStepModel(BaseStep):
     type: Literal["loop_start"] = "loop_start"
     loop_id: str
@@ -120,7 +126,7 @@ class LoopEndStepModel(BaseStep):
 
 
 ActionStepModel = Annotated[
-    Union[ClickStepModel, MoveStepModel, DragStepModel, WaitStepModel, PixelCheckStepModel, KeyTapStepModel, LoopStartStepModel, LoopEndStepModel],
+    Union[ClickStepModel, MoveStepModel, DragStepModel, WaitStepModel, PixelCheckStepModel, KeyTapStepModel, KeyHoldStepModel, LoopStartStepModel, LoopEndStepModel],
     Field(discriminator="type"),
 ]
 
@@ -135,7 +141,7 @@ class AutomationProfile(BaseModel):
     loops_count: Annotated[int, Field(ge=1, le=100_000)] = 1
     loops_infinite: bool = False
     action_icon_colors: dict[
-        Literal["click", "move", "drag", "wait", "pixel_check", "key_tap", "loop_start", "loop_end"],
+        Literal["click", "move", "drag", "wait", "pixel_check", "key_tap", "key_hold", "loop_start", "loop_end"],
         str,
     ] = Field(default_factory=dict)
 
@@ -171,7 +177,7 @@ class AppSettings(BaseModel):
     theme: Literal["dark", "light"] = "dark"
     icon_colors_profile_dependent: bool = False
     action_icon_colors: dict[
-        Literal["click", "move", "drag", "wait", "pixel_check", "key_tap", "loop_start", "loop_end"],
+        Literal["click", "move", "drag", "wait", "pixel_check", "key_tap", "key_hold", "loop_start", "loop_end"],
         str,
     ] = Field(default_factory=dict)
     profiles: list[AutomationProfile] = Field(default_factory=list)

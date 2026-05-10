@@ -58,8 +58,10 @@ def _poll_windows_mouse_click(
     timeout_s: float,
     cancel_keys: set[str] | None = None,
     stop_event: threading.Event | None = None,
+    arm_delay_s: float = 0.18,
 ) -> CapturedInput:
     started_at = time.monotonic()
+    armed_at = started_at + max(0.0, arm_delay_s)
     buttons = (
         (VK_LBUTTON, "Button.left"),
         (VK_RBUTTON, "Button.right"),
@@ -77,7 +79,7 @@ def _poll_windows_mouse_click(
 
         for vk_code, button_name in buttons:
             down = _button_down(vk_code)
-            if down and not was_down[vk_code]:
+            if time.monotonic() >= armed_at and down and not was_down[vk_code]:
                 x, y = pyautogui.position()
                 return CapturedInput(kind="mouse_click", x=int(x), y=int(y), button=button_name)
             was_down[vk_code] = down
@@ -224,6 +226,7 @@ class InputCaptureSession:
         self._key_listener: keyboard.Listener | None = None
         self._stop_event = threading.Event()
         self._worker: threading.Thread | None = None
+        self._armed_at = time.monotonic() + 0.18
 
     def start_mouse_click(self) -> None:
         if _is_windows_polling_available():
@@ -232,6 +235,8 @@ class InputCaptureSession:
             return
 
         def on_click(x: int, y: int, button: mouse.Button, pressed: bool) -> bool | None:
+            if time.monotonic() < self._armed_at:
+                return None
             if pressed:
                 self.complete(CapturedInput(kind="mouse_click", x=int(x), y=int(y), button=str(button)))
                 return False
@@ -246,6 +251,59 @@ class InputCaptureSession:
         self._mouse_listener = mouse.Listener(on_click=on_click)
         self._key_listener = keyboard.Listener(on_press=on_press)
         self._mouse_listener.start()
+        self._key_listener.start()
+
+    def start_key_press(self) -> None:
+        modifiers: set[str] = set()
+        modifier_order = {"ctrl": 0, "alt": 1, "shift": 2}
+        modifier_alias = {
+            "key.ctrl": "ctrl",
+            "key.ctrl_l": "ctrl",
+            "key.ctrl_r": "ctrl",
+            "key.shift": "shift",
+            "key.shift_l": "shift",
+            "key.shift_r": "shift",
+            "key.alt": "alt",
+            "key.alt_l": "alt",
+            "key.alt_r": "alt",
+            "key.alt_gr": "alt",
+        }
+
+        def key_name(key: keyboard.Key | keyboard.KeyCode) -> str | None:
+            if getattr(key, "char", None):
+                return str(key.char).lower()
+            value = str(key).lower()
+            if value.startswith("key."):
+                return value.removeprefix("key.")
+            return None
+
+        def on_press(key: keyboard.Key | keyboard.KeyCode) -> bool | None:
+            if time.monotonic() < self._armed_at:
+                return None
+            if _is_cancel_key(key, self._cancel_keys):
+                self.cancel("Input capture cancelled.")
+                return False
+            value = str(key).lower()
+            alias = modifier_alias.get(value)
+            if alias:
+                modifiers.add(alias)
+                return None
+            base = key_name(key)
+            if not base:
+                return None
+            ordered_mods = sorted(modifiers, key=lambda item: modifier_order.get(item, 99))
+            chord = "+".join([*ordered_mods, base]) if ordered_mods else base
+            self.complete(CapturedInput(kind="key_press", key=chord))
+            return False
+
+        def on_release(key: keyboard.Key | keyboard.KeyCode) -> bool | None:
+            value = str(key).lower()
+            alias = modifier_alias.get(value)
+            if alias:
+                modifiers.discard(alias)
+            return None
+
+        self._key_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
         self._key_listener.start()
 
     def _run_windows_mouse_poll(self) -> None:
@@ -330,6 +388,17 @@ class InputCaptureManager:
             self._sessions[session.id] = session
         try:
             session.start_mouse_click()
+        except Exception as exc:
+            session.fail(str(exc))
+        return session.snapshot()
+
+    def start_key_press(self, timeout_s: float = 30, cancel_keys: set[str] | None = None) -> CaptureSessionSnapshot:
+        self.cancel_pending("Starting a new capture session.")
+        session = InputCaptureSession(str(uuid.uuid4()), timeout_s, cancel_keys)
+        with self._lock:
+            self._sessions[session.id] = session
+        try:
+            session.start_key_press()
         except Exception as exc:
             session.fail(str(exc))
         return session.snapshot()

@@ -71,7 +71,7 @@ export type NormalProfileSettings = {
   double_click: boolean;
 };
 
-export type ActionIconType = "click" | "move" | "drag" | "wait" | "pixel_check" | "key_tap" | "loop_start" | "loop_end";
+export type ActionIconType = "click" | "move" | "drag" | "wait" | "pixel_check" | "key_tap" | "key_hold" | "loop_start" | "loop_end";
 
 export type AppSettings = {
   hotkey: string;
@@ -147,6 +147,12 @@ export type KeyTapStep = BaseStep & {
   key: string;
 };
 
+export type KeyHoldStep = BaseStep & {
+  type: "key_hold";
+  key: string;
+  hold_ms: number;
+};
+
 export type LoopStartStep = BaseStep & {
   type: "loop_start";
   loop_id: string;
@@ -160,7 +166,7 @@ export type LoopEndStep = BaseStep & {
   loop_id: string;
 };
 
-export type ActionStep = ClickStep | MoveStep | DragStep | WaitStep | PixelCheckStep | KeyTapStep | LoopStartStep | LoopEndStep;
+export type ActionStep = ClickStep | MoveStep | DragStep | WaitStep | PixelCheckStep | KeyTapStep | KeyHoldStep | LoopStartStep | LoopEndStep;
 
 export type AutomationProfile = {
   id: string;

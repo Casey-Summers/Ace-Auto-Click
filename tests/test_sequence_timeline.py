@@ -7,13 +7,14 @@ from typing import Any
 from ace_auto_click.api.models import (
     ClickStepModel,
     DragStepModel,
+    KeyHoldStepModel,
     LoopEndStepModel,
     LoopStartStepModel,
     MoveStepModel,
     WaitStepModel,
 )
 from ace_auto_click.api.sequence_service import compile_sequence_timeline
-from ace_auto_click.automation.actions import ActionStep, DragStep, MoveStep, WaitStep
+from ace_auto_click.automation.actions import ActionStep, DragStep, KeyHoldStep, MoveStep, WaitStep
 
 
 def timeline_signature(steps: list[Any]) -> list[tuple[str, str]]:
@@ -46,6 +47,16 @@ def test_compile_sequence_timeline_includes_drag_steps() -> None:
         ClickStepModel(id="click-1"),
     ]) == [
         ("drag-1", "execute"),
+        ("click-1", "execute"),
+    ]
+
+
+def test_compile_sequence_timeline_includes_key_hold_steps() -> None:
+    assert timeline_signature([
+        KeyHoldStepModel(id="hold-1", key="space", hold_ms=200),
+        ClickStepModel(id="click-1"),
+    ]) == [
+        ("hold-1", "execute"),
         ("click-1", "execute"),
     ]
 
@@ -188,6 +199,18 @@ class RecordingMouse:
         self.releases.append(button)
 
 
+class RecordingKeyboard:
+    def __init__(self) -> None:
+        self.presses: list[Any] = []
+        self.releases: list[Any] = []
+
+    def press(self, key: Any) -> None:
+        self.presses.append(key)
+
+    def release(self, key: Any) -> None:
+        self.releases.append(key)
+
+
 def test_move_step_moves_mouse_without_clicking() -> None:
     engine = RecordingEngine()
     mouse = RecordingMouse()
@@ -204,7 +227,7 @@ def test_drag_step_holds_buttons_moves_and_releases() -> None:
     engine = RecordingEngine()
     mouse = RecordingMouse()
     engine._mouse_ctl = mouse  # type: ignore[attr-defined]
-    step = DragStep(id="drag-1", type="drag", x=10, y=20, buttons=["left", "right"], angle_degrees=0, distance_px=30, duration_ms=0, interval_ms=0)
+    step = DragStep(id="drag-1", type="drag", x=10, y=20, buttons=["left", "right"], direction="right", length_px=30, speed=5000, interval_ms=0)
 
     assert step.execute(engine) is True
 
@@ -218,7 +241,7 @@ def test_drag_step_acceleration_changes_motion_curve() -> None:
     engine = RecordingEngine()
     mouse = RecordingMouse()
     engine._mouse_ctl = mouse  # type: ignore[attr-defined]
-    step = DragStep(id="drag-1", type="drag", x=0, y=0, buttons=["left"], angle_degrees=0, distance_px=100, duration_ms=18, acceleration=2, interval_ms=0)
+    step = DragStep(id="drag-1", type="drag", x=0, y=0, buttons=["left"], direction="right", length_px=100, speed=5000, acceleration=2, interval_ms=0)
 
     assert step.execute(engine) is True
 
@@ -236,9 +259,22 @@ def test_drag_step_releases_buttons_when_stopped() -> None:
         engine._stop_evt.set()
 
     mouse.press = stop_after_press  # type: ignore[method-assign]
-    step = DragStep(id="drag-1", type="drag", x=10, y=20, buttons=["left", "right"], angle_degrees=0, distance_px=30, duration_ms=10, interval_ms=0)
+    step = DragStep(id="drag-1", type="drag", x=10, y=20, buttons=["left", "right"], direction="right", length_px=30, speed=500, interval_ms=0)
 
     assert step.execute(engine) is False
 
     assert len(mouse.presses) == 2
     assert mouse.releases == list(reversed(mouse.presses))
+
+
+def test_key_hold_step_presses_and_releases_once() -> None:
+    engine = RecordingEngine()
+    kb = RecordingKeyboard()
+    engine._kb_ctl = kb  # type: ignore[attr-defined]
+    engine._register_held_key = lambda key: None  # type: ignore[attr-defined]
+    engine._unregister_held_key = lambda key: None  # type: ignore[attr-defined]
+    step = KeyHoldStep(id="hold-1", type="key_hold", key="space", hold_ms=1, interval_ms=0)
+
+    assert step.execute(engine) is True
+    assert len(kb.presses) == 1
+    assert len(kb.releases) == 1

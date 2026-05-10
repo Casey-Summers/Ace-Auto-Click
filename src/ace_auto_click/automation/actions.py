@@ -6,7 +6,7 @@ import ctypes
 from dataclasses import dataclass
 from typing import Any, Tuple
 
-from pynput import mouse
+from pynput import keyboard, mouse
 
 from ace_auto_click.automation.pixels import get_pixel_rgb, rgb_close
 
@@ -307,6 +307,73 @@ class PixelCheckStep(ActionStep):
 class KeyTapStep(ActionStep):
     key: str = "space"
 
+    def _parse_combo(self) -> tuple[list[keyboard.Key], str | keyboard.Key]:
+        parts = [part.strip().lower() for part in (self.key or "").split("+") if part.strip()]
+        mod_map: dict[str, keyboard.Key] = {"ctrl": keyboard.Key.ctrl, "shift": keyboard.Key.shift, "alt": keyboard.Key.alt}
+        mods: list[keyboard.Key] = []
+        base: str | keyboard.Key = "space"
+        for part in parts:
+            if part in mod_map:
+                mods.append(mod_map[part])
+            elif part.startswith("key."):
+                base = getattr(keyboard.Key, part.split("key.", 1)[1], part)
+            else:
+                base = part
+        return mods, base
+
     def _run(self, engine: Any) -> bool:
-        engine._kb_ctl.tap(self.key)
+        mods, base = self._parse_combo()
+        for mod in mods:
+            engine._kb_ctl.press(mod)
+        try:
+            engine._kb_ctl.tap(base)
+        finally:
+            for mod in reversed(mods):
+                engine._kb_ctl.release(mod)
         return True
+
+
+@dataclass
+class KeyHoldStep(ActionStep):
+    key: str = "space"
+    hold_ms: int = 300
+
+    def _parse_combo(self) -> tuple[list[keyboard.Key], str | keyboard.Key]:
+        parts = [part.strip().lower() for part in (self.key or "").split("+") if part.strip()]
+        mod_map: dict[str, keyboard.Key] = {"ctrl": keyboard.Key.ctrl, "shift": keyboard.Key.shift, "alt": keyboard.Key.alt}
+        mods: list[keyboard.Key] = []
+        base: str | keyboard.Key = "space"
+        for part in parts:
+            if part in mod_map:
+                mods.append(mod_map[part])
+            elif part.startswith("key."):
+                base = getattr(keyboard.Key, part.split("key.", 1)[1], part)
+            else:
+                base = part
+        return mods, base
+
+    def _run(self, engine: Any) -> bool:
+        mods, resolved = self._parse_combo()
+        for mod in mods:
+            engine._kb_ctl.press(mod)
+        engine._kb_ctl.press(resolved)
+        if hasattr(engine, "_register_held_key"):
+            engine._register_held_key(resolved)
+            for mod in mods:
+                engine._register_held_key(mod)
+        try:
+            delay_s = max(0, int(self.hold_ms)) / 1000.0
+            start = time.perf_counter()
+            while time.perf_counter() - start < delay_s:
+                if engine._stop_evt.is_set():
+                    return False
+                time.sleep(0.005)
+            return True
+        finally:
+            if hasattr(engine, "_unregister_held_key"):
+                engine._unregister_held_key(resolved)
+                for mod in mods:
+                    engine._unregister_held_key(mod)
+            engine._kb_ctl.release(resolved)
+            for mod in reversed(mods):
+                engine._kb_ctl.release(mod)

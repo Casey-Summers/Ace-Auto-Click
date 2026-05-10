@@ -6,6 +6,21 @@ import { createStep } from "../lib/steps";
 import { defaultState, normalizeSettings } from "../lib/settings";
 import type { ActionStep, AppMode, AppSettings, AutomationProfile, ExecutionEvent, Point, ProfileFile, Rgb, RuntimeState } from "../lib/types";
 
+type CaptureKind = "position" | "pixel" | "key";
+type CaptureContext = {
+  kind: CaptureKind;
+  stepId: string;
+  sessionId: string;
+  token: number;
+};
+type CaptureStatus = "pending" | "complete" | "cancelled" | "failed";
+type CaptureSnapshot = {
+  id: string;
+  status: CaptureStatus;
+  result: { x: number; y: number } | { key: string } | null;
+  error: string | null;
+};
+
 export function useAppController() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [state, setState] = useState<RuntimeState>(defaultState);
@@ -23,7 +38,10 @@ export function useAppController() {
   const [pickCursorPosition, setPickCursorPosition] = useState<Point | null>(null);
   const [pixelLiveRgb, setPixelLiveRgb] = useState<Rgb | null>(null);
   const [samplingPixelStepId, setSamplingPixelStepId] = useState("");
+  const [pickingKeyStepId, setPickingKeyStepId] = useState("");
   const captureSessionId = useRef("");
+  const captureToken = useRef(0);
+  const [captureContext, setCaptureContext] = useState<CaptureContext | null>(null);
   const settingsHydrated = useRef(false);
   const settingsRef = useRef(settings);
   const [log, setLog] = useState<string[]>(["UI ready. Start the API with python app.py api."]);
@@ -74,6 +92,7 @@ export function useAppController() {
     document.documentElement.style.setProperty("--icon-wait", colors.wait ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-pixel", colors.pixel_check ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-key", colors.key_tap ?? "#55B3FF");
+    document.documentElement.style.setProperty("--icon-key-hold", colors.key_hold ?? colors.key_tap ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-loop-start", colors.loop_start ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-loop-end", colors.loop_end ?? "#55B3FF");
   }, [settings.theme, settings.icon_colors_profile_dependent, settings.action_icon_colors, activeProfile.action_icon_colors]);
@@ -105,7 +124,7 @@ export function useAppController() {
   }, [state.running]);
 
   useEffect(() => {
-    if (!pickingClickStepId && !samplingPixelStepId) {
+    if (!pickingClickStepId && !samplingPixelStepId && !pickingKeyStepId) {
       setPickCursorPosition(null);
       setPixelLiveRgb(null);
       return undefined;
@@ -151,23 +170,104 @@ export function useAppController() {
       window.clearInterval(timer);
       window.removeEventListener("keydown", onKey);
     };
-  }, [pickingClickStepId, samplingPixelStepId, selectedStep?.type]);
+  }, [pickingClickStepId, samplingPixelStepId, pickingKeyStepId, selectedStep?.type]);
 
   useEffect(() => {
-    if (!pickingClickStepId && !samplingPixelStepId) return;
-    const selectedStillActive = activeProfile.steps.some((step) => step.id === (pickingClickStepId || samplingPixelStepId));
-    const invalidClickMode = Boolean(pickingClickStepId) && (!selectedStep || selectedStep.id !== pickingClickStepId || (selectedStep.type !== "click" && selectedStep.type !== "move" && selectedStep.type !== "drag"));
-    const invalidPixelMode = Boolean(samplingPixelStepId) && (!selectedStep || selectedStep.id !== samplingPixelStepId || selectedStep.type !== "pixel_check");
-    if (!selectedStillActive || invalidClickMode || invalidPixelMode || settings.mode !== "advanced") {
+    if (!captureContext) return;
+    const stillExists = activeProfile.steps.some((step) => step.id === captureContext.stepId);
+    const invalidForKind =
+      (captureContext.kind === "position" && (!selectedStep || selectedStep.id !== captureContext.stepId || (selectedStep.type !== "click" && selectedStep.type !== "move" && selectedStep.type !== "drag"))) ||
+      (captureContext.kind === "pixel" && (!selectedStep || selectedStep.id !== captureContext.stepId || selectedStep.type !== "pixel_check")) ||
+      (captureContext.kind === "key" && (!selectedStep || selectedStep.id !== captureContext.stepId || (selectedStep.type !== "key_tap" && selectedStep.type !== "key_hold")));
+    if (!stillExists || invalidForKind || settings.mode !== "advanced") {
       const sessionId = captureSessionId.current;
       if (sessionId) {
         api.cancelInputCapture(sessionId).catch(() => undefined);
-        captureSessionId.current = "";
       }
+      captureSessionId.current = "";
+      setCaptureContext(null);
       setPickingClickStepId("");
       setSamplingPixelStepId("");
+      setPickingKeyStepId("");
     }
-  }, [activeProfile.steps, pickingClickStepId, samplingPixelStepId, selectedStep, settings.mode]);
+  }, [activeProfile.steps, captureContext, selectedStep, settings.mode]);
+
+  useEffect(() => {
+    if (!captureContext || captureContext.kind !== "key") return undefined;
+    const suppressShortcuts = (event: KeyboardEvent) => {
+      if (event.key === "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    window.addEventListener("keydown", suppressShortcuts, true);
+    return () => window.removeEventListener("keydown", suppressShortcuts, true);
+  }, [captureContext]);
+
+  const runCaptureSession = async (kind: CaptureKind, stepId: string, starter: () => Promise<CaptureSnapshot>) => {
+    const token = ++captureToken.current;
+    const started = await starter();
+    captureSessionId.current = started.id;
+    setCaptureContext({ kind, stepId, sessionId: started.id, token });
+    let snapshot = started;
+    while (snapshot.status === "pending" && captureSessionId.current === started.id && captureToken.current === token) {
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+      try {
+        snapshot = await api.inputCaptureStatus(started.id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/404|Not Found/i.test(message)) {
+          if (captureSessionId.current === started.id && captureToken.current === token) {
+            setLog((items) => ["Capture ended unexpectedly.", ...items]);
+          }
+          break;
+        }
+        throw error;
+      }
+    }
+    if (captureSessionId.current === started.id) {
+      captureSessionId.current = "";
+    }
+    if (captureToken.current === token) {
+      setCaptureContext(null);
+    }
+    return snapshot;
+  };
+
+  const pickStepKey = async () => {
+    if (!selectedStep || (selectedStep.type !== "key_tap" && selectedStep.type !== "key_hold")) return;
+    if (pickingKeyStepId) return;
+    const stepId = selectedStep.id;
+    setPickingKeyStepId(stepId);
+    try {
+      const snapshot = await runCaptureSession("key", stepId, () => api.startKeyPressCapture() as Promise<CaptureSnapshot>);
+      if (snapshot.status !== "complete" || !snapshot.result || !("key" in snapshot.result)) {
+        return;
+      }
+      const key = snapshot.result.key;
+      setSettings((current) => {
+        const next = {
+          ...current,
+          profiles: current.profiles.map((profile) =>
+            profile.id === current.active_profile_id
+              ? {
+                  ...profile,
+                  steps: profile.steps.map((step) =>
+                    step.id === stepId && (step.type === "key_tap" || step.type === "key_hold")
+                      ? { ...step, key }
+                      : step
+                  )
+                }
+              : profile
+          )
+        };
+        settingsRef.current = next;
+        return next;
+      });
+      setLog((items) => [`Captured key ${key}.`, ...items]);
+    } finally {
+      setPickingKeyStepId("");
+    }
+  };
 
   useEffect(() => {
     if (!settingsHydrated.current) return undefined;
@@ -400,15 +500,7 @@ export function useAppController() {
     const stepId = selectedStep.id;
     setSamplingPixelStepId(stepId);
     try {
-      const started = await api.startMouseClickCapture();
-      captureSessionId.current = started.id;
-      let snapshot = started;
-      while (snapshot.status === "pending" && captureSessionId.current === started.id) {
-        await new Promise((resolve) => window.setTimeout(resolve, 100));
-        snapshot = await api.inputCaptureStatus(started.id);
-      }
-      if (captureSessionId.current !== started.id) return;
-      captureSessionId.current = "";
+      const snapshot = await runCaptureSession("pixel", stepId, () => api.startMouseClickCapture() as Promise<CaptureSnapshot>);
       if (snapshot.status === "cancelled") {
         setLog((items) => ["Pixel sample cancelled.", ...items]);
         return;
@@ -418,7 +510,7 @@ export function useAppController() {
         return;
       }
       const position = snapshot.result;
-      if (!position) {
+      if (!position || !("x" in position) || !("y" in position)) {
         setLog((items) => ["Pixel sample failed: capture completed without coordinates.", ...items]);
         return;
       }
@@ -449,7 +541,6 @@ export function useAppController() {
       const timedOut = /timed out|408/i.test(message);
       setLog((items) => [cancelled ? "Pixel sample cancelled." : timedOut ? "Pixel sample timed out." : `Pixel sample failed: ${message}`, ...items]);
     } finally {
-      captureSessionId.current = "";
       setSamplingPixelStepId("");
     }
   };
@@ -530,15 +621,7 @@ export function useAppController() {
     const stepId = selectedStep.id;
     setPickingClickStepId(stepId);
     try {
-      const started = await api.startMouseClickCapture();
-      captureSessionId.current = started.id;
-      let snapshot = started;
-      while (snapshot.status === "pending" && captureSessionId.current === started.id) {
-        await new Promise((resolve) => window.setTimeout(resolve, 100));
-        snapshot = await api.inputCaptureStatus(started.id);
-      }
-      if (captureSessionId.current !== started.id) return;
-      captureSessionId.current = "";
+      const snapshot = await runCaptureSession("position", stepId, () => api.startMouseClickCapture() as Promise<CaptureSnapshot>);
       if (snapshot.status === "cancelled") {
         setLog((items) => ["Position picker cancelled.", ...items]);
         return;
@@ -548,7 +631,7 @@ export function useAppController() {
         return;
       }
       const position = snapshot.result;
-      if (!position) {
+      if (!position || !("x" in position) || !("y" in position)) {
         setLog((items) => ["Position picker failed: capture completed without coordinates.", ...items]);
         return;
       }
@@ -578,7 +661,6 @@ export function useAppController() {
       const timedOut = /timed out|408/i.test(message);
       setLog((items) => [cancelled ? "Position picker cancelled." : timedOut ? "Position picker timed out." : `Position picker failed: ${message}`, ...items]);
     } finally {
-      captureSessionId.current = "";
       setPickingClickStepId("");
     }
   };
@@ -609,6 +691,9 @@ export function useAppController() {
     pickCursorPosition,
     pixelLiveRgb,
     pickingClickStepId,
+    pickingKeyStepId,
+    captureWaitingKind: captureContext?.kind ?? null,
+    captureWaitingStepId: captureContext?.stepId ?? "",
     profileError,
     profileFiles,
     profileNameError,
@@ -637,5 +722,6 @@ export function useAppController() {
     setMode,
     patchSteps,
     pickClickPosition
+    ,pickStepKey
   };
 }

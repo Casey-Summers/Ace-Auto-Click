@@ -99,6 +99,12 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
     if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
     return { title: `Tap ${step.key}`, subtext: parts.join(" / ") };
   }
+  if (step.type === "key_hold") {
+    const parts: string[] = [];
+    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    return { title: `Hold ${step.key} for ${formatMs(step.hold_ms)}`, subtext: parts.join(" / ") };
+  }
   if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop Start infinite" : `Loop Start x${loopDisplayCount(step)}`, subtext: "" };
   return { title: "Loop End", subtext: "" };
 }

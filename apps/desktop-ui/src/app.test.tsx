@@ -20,6 +20,7 @@ const apiMock = vi.hoisted(() => ({
   mousePosition: vi.fn(),
   pickClickPosition: vi.fn(),
   startMouseClickCapture: vi.fn(),
+  startKeyPressCapture: vi.fn(),
   inputCaptureStatus: vi.fn(),
   cancelInputCapture: vi.fn(),
   pixel: vi.fn()
@@ -50,6 +51,7 @@ describe("App", () => {
     apiMock.mousePosition.mockResolvedValue({ x: 25, y: 50 });
     apiMock.pickClickPosition.mockResolvedValue({ x: 77, y: 88 });
     apiMock.startMouseClickCapture.mockResolvedValue({ id: "capture-1", status: "pending", result: null, error: null });
+    apiMock.startKeyPressCapture.mockResolvedValue({ id: "capture-key-1", status: "pending", result: null, error: null });
     apiMock.inputCaptureStatus.mockResolvedValue({ id: "capture-1", status: "complete", result: { kind: "mouse_click", x: 77, y: 88, button: "Button.left" }, error: null });
     apiMock.cancelInputCapture.mockResolvedValue({ id: "capture-1", status: "cancelled", result: null, error: "Input capture cancelled." });
   });
@@ -190,5 +192,53 @@ describe("App", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Pick Click Position" })).toBeEnabled());
     expect(screen.queryByText("Action Details")).not.toBeInTheDocument();
     expect(await screen.findByText("Position picker cancelled.")).toBeInTheDocument();
+  });
+
+  it("shows current key inside the capture button for key actions", async () => {
+    render(<App />);
+    await screen.findByText(/Connected to Ace Auto Click/);
+    fireEvent.click(screen.getByRole("button", { name: /Key tap/i }));
+    expect(screen.getByRole("button", { name: /Change key, current space/i })).toBeInTheDocument();
+    expect(screen.getByText("space")).toBeInTheDocument();
+    expect(screen.queryByText(/Capture Key Input/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Key preview:/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps key hold preview inside the capture button", async () => {
+    render(<App />);
+    await screen.findByText(/Connected to Ace Auto Click/);
+    fireEvent.click(screen.getByRole("button", { name: /Key hold/i }));
+    expect(screen.getByRole("button", { name: /Change key, current space/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Key preview:/i)).not.toBeInTheDocument();
+  });
+
+  it("shows pending state while action key capture waits and updates after completion", async () => {
+    apiMock.startKeyPressCapture.mockResolvedValue({ id: "capture-key-1", status: "pending", result: null, error: null });
+    apiMock.inputCaptureStatus
+      .mockResolvedValueOnce({ id: "capture-key-1", status: "pending", result: null, error: null })
+      .mockResolvedValue({ id: "capture-key-1", status: "complete", result: { kind: "key_press", key: "ctrl+a" }, error: null });
+
+    render(<App />);
+    await screen.findByText(/Connected to Ace Auto Click/);
+    fireEvent.click(screen.getByRole("button", { name: /Key tap/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Change key, current space/i }));
+
+    expect(await screen.findByText("Press a key...")).toBeInTheDocument();
+    expect(screen.getByText("Esc cancels")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: /Change key, current ctrl\+a/i })).toBeInTheDocument());
+    expect(screen.getByText("ctrl+a")).toBeInTheDocument();
+  });
+
+  it("suppresses ctrl+a default behavior while key capture is pending", async () => {
+    apiMock.startKeyPressCapture.mockResolvedValue({ id: "capture-key-1", status: "pending", result: null, error: null });
+    apiMock.inputCaptureStatus.mockImplementation(async (id: string) => ({ id, status: "pending", result: null, error: null }));
+    render(<App />);
+    await screen.findByText(/Connected to Ace Auto Click/);
+    fireEvent.click(screen.getByRole("button", { name: /Key tap/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Change key, current space/i }));
+    expect(await screen.findByText("Press a key...")).toBeInTheDocument();
+    const event = new KeyboardEvent("keydown", { key: "a", ctrlKey: true, cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
   });
 });

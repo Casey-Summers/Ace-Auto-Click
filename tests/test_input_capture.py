@@ -167,3 +167,60 @@ def test_next_click_route_maps_timeout_and_cancel(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(routes.input_capture, "capture_next_mouse_click", cancel_capture)
     response = TestClient(app).post("/mouse-position/next-click")
     assert response.status_code == 409
+
+
+def test_key_capture_session_captures_modifiers_in_canonical_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeKeyListener:
+        def __init__(self, on_press, on_release):
+            self.on_press = on_press
+            self.on_release = on_release
+
+        def start(self) -> None:
+            self.on_press(input_capture.keyboard.Key.ctrl_l)
+            self.on_press(input_capture.keyboard.Key.alt_r)
+            self.on_press(input_capture.keyboard.Key.shift)
+            self.on_press(type("K", (), {"char": "a"})())
+
+        def stop(self) -> None:
+            return None
+
+        def join(self, timeout=None) -> None:
+            return None
+
+    monkeypatch.setattr(input_capture.keyboard, "Listener", FakeKeyListener)
+    session = input_capture.InputCaptureSession("key-1", timeout_s=1, cancel_keys={"esc"})
+    session.start_key_press()
+    snap = session.snapshot()
+    assert snap.status == "complete"
+    assert snap.result is not None
+    assert snap.result.key == "ctrl+alt+shift+a"
+
+
+def test_key_capture_session_ignores_modifier_only_until_base_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    holder: dict[str, object] = {}
+
+    class FakeKeyListener:
+        def __init__(self, on_press, on_release):
+            holder["on_press"] = on_press
+            holder["on_release"] = on_release
+
+        def start(self) -> None:
+            return None
+
+        def stop(self) -> None:
+            return None
+
+        def join(self, timeout=None) -> None:
+            return None
+
+    monkeypatch.setattr(input_capture.keyboard, "Listener", FakeKeyListener)
+    session = input_capture.InputCaptureSession("key-2", timeout_s=1, cancel_keys={"esc"})
+    session.start_key_press()
+    on_press = holder["on_press"]
+    on_press(input_capture.keyboard.Key.shift)
+    assert session.snapshot().status == "pending"
+    on_press(type("K", (), {"char": "z"})())
+    snap = session.snapshot()
+    assert snap.status == "complete"
+    assert snap.result is not None
+    assert snap.result.key == "shift+z"

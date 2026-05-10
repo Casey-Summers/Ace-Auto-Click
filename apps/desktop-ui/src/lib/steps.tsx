@@ -8,6 +8,7 @@ export function stepIcon(type: ActionStep["type"]) {
   if (type === "drag") return <Grab size={16} />;
   if (type === "wait") return <Timer size={16} />;
   if (type === "pixel_check") return <Crosshair size={16} />;
+  if (type === "key_hold") return <Keyboard size={16} />;
   if (type === "loop_start") return <ChevronDown size={16} />;
   if (type === "loop_end") return <ChevronUp size={16} />;
   return <Keyboard size={16} />;
@@ -19,6 +20,7 @@ export function stepTitle(step: ActionStep) {
   if (step.type === "drag") return `Drag ${step.direction} ${step.length_px}px`;
   if (step.type === "wait") return `Wait ${step.ms}ms`;
   if (step.type === "pixel_check") return `Pixel Match ${step.x}, ${step.y}`;
+  if (step.type === "key_hold") return `Hold ${step.key} for ${step.hold_ms}ms`;
   if (step.type === "loop_start") return step.loop_infinite ? "Loop start (infinite)" : `Loop start (${step.loop_count}x)`;
   if (step.type === "loop_end") return "Loop end";
   return `Tap ${step.key}`;
@@ -55,6 +57,9 @@ export function createStep(type: ActionStep["type"]): ActionStep {
       tolerance: 10,
       mode: "wait_until_match"
     };
+  }
+  if (type === "key_hold") {
+    return { ...base, type, key: "space", hold_ms: 300 };
   }
   return { ...base, type, key: "space" };
 }

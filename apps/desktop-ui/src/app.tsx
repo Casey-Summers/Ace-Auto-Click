@@ -34,16 +34,18 @@ export function App() {
     pickCursorPosition,
     pixelLiveRgb,
     pickClickPosition,
-    pickingClickStepId,
+    pickStepKey,
+    captureWaitingKind,
+    captureWaitingStepId,
     profileError,
     profileFiles,
     profileNameError,
     profileSaving,
     requestSaveProfile,
     runToggle,
-    samplingPixelStepId,
     executionEvents,
     samplePixel,
+    samplingPixelStepId,
     saveDialogOpen,
     selectedProfileFile,
     selectedStep,
@@ -155,12 +157,14 @@ export function App() {
       <StepDetailsPanel
         step={selectedStep}
       pickCursorPosition={pickCursorPosition}
-      pickingClickPosition={selectedStep?.id === pickingClickStepId}
+      pickingClickPosition={selectedStep?.id === captureWaitingStepId && captureWaitingKind === "position"}
+      pickingKey={selectedStep?.id === captureWaitingStepId && captureWaitingKind === "key"}
       pixelLiveRgb={pixelLiveRgb}
-      samplingPixel={selectedStep?.id === samplingPixelStepId}
+      samplingPixel={selectedStep?.id === captureWaitingStepId && captureWaitingKind === "pixel"}
       onChange={patchSelected}
         onSamplePixel={samplePixel}
         onPickClickPosition={pickClickPosition}
+        onPickKey={pickStepKey}
         onDuplicate={controller.duplicateSelectedStep}
         onDelete={controller.deleteSelectedStep}
       />

@@ -60,6 +60,8 @@ export const api = {
     request<Point>("/mouse-position/next-click", { method: "POST" }),
   startMouseClickCapture: () =>
     request<InputCaptureSnapshot>("/input-capture/mouse-click/start", { method: "POST" }),
+  startKeyPressCapture: () =>
+    request<InputCaptureSnapshot>("/input-capture/key-press/start", { method: "POST" }),
   inputCaptureStatus: (sessionId: string) =>
     request<InputCaptureSnapshot>(`/input-capture/${encodeURIComponent(sessionId)}`),
   cancelInputCapture: (sessionId: string) =>

@@ -12,13 +12,14 @@ from ace_auto_click.api.models import (
     ClickStepModel,
     DragStepModel,
     KeyTapStepModel,
+    KeyHoldStepModel,
     LoopEndStepModel,
     LoopStartStepModel,
     MoveStepModel,
     PixelCheckStepModel,
     WaitStepModel,
 )
-from ace_auto_click.automation.actions import ClickStep, DragStep, KeyTapStep, MoveStep, PixelCheckStep, WaitStep
+from ace_auto_click.automation.actions import ClickStep, DragStep, KeyHoldStep, KeyTapStep, MoveStep, PixelCheckStep, WaitStep
 from ace_auto_click.automation.engine import SequenceTimelineNode
 
 
@@ -138,7 +139,7 @@ def compile_sequence_timeline(steps: list[ActionStepModel]) -> list[SequenceTime
     return timeline
 
 
-def to_action_step(step: ActionStepModel) -> ClickStep | MoveStep | DragStep | WaitStep | PixelCheckStep | KeyTapStep:
+def to_action_step(step: ActionStepModel) -> ClickStep | MoveStep | DragStep | WaitStep | PixelCheckStep | KeyTapStep | KeyHoldStep:
     data: dict[str, Any] = step.model_dump()
     if isinstance(step, ClickStepModel):
         return ClickStep(**data)
@@ -152,6 +153,8 @@ def to_action_step(step: ActionStepModel) -> ClickStep | MoveStep | DragStep | W
         return PixelCheckStep(**data)
     if isinstance(step, KeyTapStepModel):
         return KeyTapStep(**data)
+    if isinstance(step, KeyHoldStepModel):
+        return KeyHoldStep(**data)
     if isinstance(step, (LoopStartStepModel, LoopEndStepModel)):
         raise ValueError("Loop markers must be compiled before execution.")
     raise ValueError(f"Unsupported step type: {step.type}")
