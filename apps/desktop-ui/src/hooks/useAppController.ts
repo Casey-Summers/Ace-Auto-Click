@@ -156,7 +156,7 @@ export function useAppController() {
         if (selectedStep?.type === "pixel_check") {
           const pixel = await api.pixel(position.x, position.y);
           if (active) setPixelLiveRgb(pixel.rgb);
-        } else if (samplingPixelStepId && selectedStep?.type === "click") {
+        } else if (samplingPixelStepId && (selectedStep?.type === "click" || selectedStep?.type === "move")) {
           const pixel = await api.pixel(selectedStep.x, selectedStep.y);
           if (active) setPixelLiveRgb(pixel.rgb);
         }
@@ -526,10 +526,10 @@ export function useAppController() {
     setSelectedId(duplicated.id);
   };
 
-  const samplePixelFromClickStep = async (clickStepId: string) => {
+  const samplePixelFromClickStep = async (stepId: string) => {
     if (!samplingPixelStepId) return;
-    const clickStep = activeProfile.steps.find((step): step is Extract<ActionStep, { type: "click" }> => step.id === clickStepId && step.type === "click");
-    if (!clickStep) return;
+    const sourceStep = activeProfile.steps.find((step): step is Extract<ActionStep, { type: "click" | "move" }> => step.id === stepId && (step.type === "click" || step.type === "move"));
+    if (!sourceStep) return;
     try {
       // If the standard pixel capture flow is still running, cancel it so it
       // cannot later overwrite this click-coordinate sample.
@@ -539,15 +539,15 @@ export function useAppController() {
         api.cancelInputCapture(activeSessionId).catch(() => undefined);
       }
 
-      // Important: sampling from a click step must use that step's stored coordinates,
+      // Important: sampling from another sequence step must use that step's stored coordinates,
       // never the live mouse cursor position.
-      const sourceX = clickStep.x;
-      const sourceY = clickStep.y;
+      const sourceX = sourceStep.x;
+      const sourceY = sourceStep.y;
       const sample = await api.pixel(sourceX, sourceY);
       const targetPixelStepId = samplingPixelStepId;
       updateStepById(targetPixelStepId, (step) => step.type === "pixel_check" ? { ...step, x: sourceX, y: sourceY, expected_rgb: sample.rgb } : step);
       setSamplingPixelStepId("");
-      setLog((items) => [`Copied click coordinates ${sourceX}, ${sourceY} and sampled ${sample.rgb.join(", ")}.`, ...items]);
+      setLog((items) => [`Copied ${sourceStep.type} coordinates ${sourceX}, ${sourceY} and sampled ${sample.rgb.join(", ")}.`, ...items]);
     } catch (error) {
       setLog((items) => [`Pixel sample failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
     }

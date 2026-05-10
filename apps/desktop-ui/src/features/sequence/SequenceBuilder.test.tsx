@@ -58,6 +58,14 @@ function row(container: HTMLElement, stepId: string): HTMLElement {
 }
 
 describe("SequenceBuilder execution flashes", () => {
+  it("uses a bounded scroll viewport structure for rows", () => {
+    const { container } = renderBuilder([]);
+    const clipper = container.querySelector(".min-h-0.flex-1.overflow-hidden");
+    const scroller = container.querySelector(".overflow-y-auto.overflow-x-hidden");
+    expect(clipper).toBeTruthy();
+    expect(scroller).toBeTruthy();
+  });
+
   it("renders sanitized keybind row titles", () => {
     render(
       <SequenceBuilder

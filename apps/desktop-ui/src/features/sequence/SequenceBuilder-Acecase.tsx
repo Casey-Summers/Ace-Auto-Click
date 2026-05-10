@@ -316,16 +316,18 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
 
   return (
     <CollapsibleSection className="sequence-builder-shell flex h-full min-h-0 flex-col" contentClassName="min-h-0 flex-1" title="Sequence Builder" icon={<RadioTower size={16} />} actions={<div className="flex items-center gap-2"><label className="flex items-center gap-2 text-xs text-muted-foreground">Loops<div className="relative"><Input className="h-8 w-24 pr-8" type="number" min={1} value={loopsInfinite ? "" : loopDraft} disabled={loopsInfinite} onChange={(event) => { const nextValue = event.target.value; setLoopDraft(nextValue); const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 1) onLoopsChange(Math.floor(parsed), false); }} onBlur={() => { const parsed = Number(loopDraft); if (Number.isFinite(parsed) && parsed >= 1) { const safe = Math.floor(parsed); onLoopsChange(safe, false); setLoopDraft(String(safe)); } else setLoopDraft(String(loopsCount)); }} /><button className={`absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 ${loopsInfinite ? "text-accent" : "text-muted-foreground hover:text-foreground"}`} onClick={() => onLoopsChange(loopsCount, !loopsInfinite)} title="Repeat indefinitely" type="button"><Infinity size={14} /></button></div></label><SplitHotkeyActionButton tone={running ? "danger" : "success"} icon={running ? <Square size={16} /> : <RadioTower size={16} />} label={running ? "Stop sequence" : "Run sequence"} hotkey={runHotkey} onAction={onRunToggle} onHotkey={running ? onRunToggle : onRunHotkeyClick} disabled={!backendAvailable} /></div>}>
+      <div className="flex min-h-0 h-full flex-1 flex-col overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden">
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
-          <div ref={listRef} className="relative flex h-full min-h-0 flex-col gap-2 overflow-y-auto pr-1">
+          <div ref={listRef} className="relative h-full min-h-0 overflow-y-auto overflow-x-hidden pr-1">
             <div className="pointer-events-none absolute inset-0 z-0">
               {railSegments.map((segment) => <span key={segment.id} className="absolute w-px" style={{ left: "5%", top: `${segment.y1}px`, height: `${segment.y2 - segment.y1}px`, backgroundColor: "hsl(var(--loop-rail) / 0.75)" }} />)}
             </div>
             <div className="relative z-10 flex flex-col gap-2">
               {rows.map((row) => {
                 const step = steps[row.index];
-                const pixelSamplingAssist = Boolean(samplingPixelStepId) && step.type === "click";
+                const pixelSamplingAssist = Boolean(samplingPixelStepId) && (step.type === "click" || step.type === "move");
                 const executing = executingStepId === step.id;
                 const stateTone = !executing ? "info" : executingStepState === "condition_false" ? "danger" : executingStepState === "waiting" ? "warning" : "success";
                 return <SortableRow key={step.id} row={row} step={step} selected={executing || step.id === selectedId} stateTone={stateTone} flashTone={flashByStepId[step.id] ?? null} heldTone={heldStateByStepId[step.id] ?? null} selectedPixelLiveRgb={selectedPixelLiveRgb} pixelSamplingAssist={pixelSamplingAssist} onSelect={() => { if (pixelSamplingAssist && onSamplePixelFromClickStep) { void onSamplePixelFromClickStep(step.id); return; } onSelect(step.id); }} onToggleCollapse={toggleCollapse} />;
@@ -334,6 +336,8 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
           </div>
         </SortableContext>
       </DndContext>
+      </div>
+      </div>
     </CollapsibleSection>
   );
 }
