@@ -110,6 +110,7 @@ input[type="number"] {
 
 .step-icon[data-step-type="click"] { color: var(--icon-click); }
 .step-icon[data-step-type="move"] { color: var(--icon-move); }
+.step-icon[data-step-type="drag"] { color: var(--icon-drag); }
 .step-icon[data-step-type="wait"] { color: var(--icon-wait); }
 .step-icon[data-step-type="pixel_check"] { color: var(--icon-pixel); }
 .step-icon[data-step-type="key_tap"] { color: var(--icon-key); }

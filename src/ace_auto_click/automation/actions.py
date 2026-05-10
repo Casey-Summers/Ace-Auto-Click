@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import random
+import ctypes
 from dataclasses import dataclass
 from typing import Any, Tuple
 
@@ -89,6 +90,153 @@ class MoveStep(PointerTargetStep):
     def _run(self, engine: Any) -> bool:
         engine._mouse_ctl.position = self.target_position()
         return True
+
+
+@dataclass
+class DragStep(PointerTargetStep):
+    buttons: list[str] | None = None
+    direction: str = "right"
+    length_px: int = 100
+    speed: int = 500
+    acceleration: float = 1.6
+    hold_delay_ms: int = 60
+    release_delay_ms: int = 0
+    button_order: list[str] | None = None
+
+    def _button(self, name: str) -> mouse.Button:
+        if "right" in name:
+            return mouse.Button.right
+        if "middle" in name:
+            return mouse.Button.middle
+        return mouse.Button.left
+
+    def _run(self, engine: Any) -> bool:
+        start_x, start_y = self.target_position()
+        length = max(0, int(self.length_px))
+        dir_name = (self.direction or "right").lower()
+        dx, dy = 1, 0
+        if dir_name == "left":
+            dx, dy = -1, 0
+        elif dir_name == "up":
+            dx, dy = 0, -1
+        elif dir_name == "down":
+            dx, dy = 0, 1
+        end_x = start_x + (dx * length)
+        end_y = start_y + (dy * length)
+        px_per_second = max(50.0, min(5000.0, float(self.speed)))
+        duration_s = 0.0 if length == 0 else length / px_per_second
+        step_count = max(1, min(240, int(duration_s / 0.006) if duration_s > 0 else 1))
+        acceleration = max(0.2, min(5.0, float(self.acceleration)))
+        button_names = list(dict.fromkeys(self.button_order or self.buttons or ["left", "right"]))
+        held_buttons = [self._button(name) for name in button_names]
+        if self._run_with_sendinput(engine, start_x, start_y, end_x, end_y, held_buttons, duration_s, step_count, acceleration):
+            return True
+        return self._run_with_pynput_fallback(engine, start_x, start_y, end_x, end_y, held_buttons, duration_s, step_count, acceleration)
+
+    def _run_with_pynput_fallback(self, engine: Any, start_x: int, start_y: int, end_x: float, end_y: float, held_buttons: list[mouse.Button], duration_s: float, step_count: int, acceleration: float) -> bool:
+        engine._mouse_ctl.position = (start_x, start_y)
+        try:
+            for btn in held_buttons:
+                engine._mouse_ctl.press(btn)
+            if not self._sleep_with_stop(engine, max(0, self.hold_delay_ms) / 1000.0):
+                return False
+            start_time = time.perf_counter()
+            for index in range(1, step_count + 1):
+                if engine._stop_evt.is_set():
+                    return False
+                elapsed_ratio = index / step_count
+                ratio = elapsed_ratio ** acceleration
+                engine._mouse_ctl.position = (
+                    int(round(start_x + ((end_x - start_x) * ratio))),
+                    int(round(start_y + ((end_y - start_y) * ratio))),
+                )
+                if duration_s > 0 and index < step_count:
+                    target_elapsed = duration_s * elapsed_ratio
+                    while time.perf_counter() - start_time < target_elapsed:
+                        if engine._stop_evt.is_set():
+                            return False
+                        time.sleep(0.005)
+            return self._sleep_with_stop(engine, max(0, self.release_delay_ms) / 1000.0)
+        finally:
+            for btn in reversed(held_buttons):
+                engine._mouse_ctl.release(btn)
+
+    def _sleep_with_stop(self, engine: Any, delay_s: float) -> bool:
+        start = time.perf_counter()
+        while time.perf_counter() - start < delay_s:
+            if engine._stop_evt.is_set():
+                return False
+            time.sleep(0.005)
+        return True
+
+    def _run_with_sendinput(self, engine: Any, start_x: int, start_y: int, end_x: float, end_y: float, held_buttons: list[mouse.Button], duration_s: float, step_count: int, acceleration: float) -> bool:
+        if "Windows" not in __import__("platform").system():
+            return False
+        if not hasattr(ctypes, "windll") or not hasattr(ctypes.windll, "user32"):
+            return False
+        user32 = ctypes.windll.user32
+        left_down, left_up = 0x0002, 0x0004
+        right_down, right_up = 0x0008, 0x0010
+        middle_down, middle_up = 0x0020, 0x0040
+        move_flag, absolute_flag = 0x0001, 0x8000
+        btn_map = {
+            mouse.Button.left: (left_down, left_up),
+            mouse.Button.right: (right_down, right_up),
+            mouse.Button.middle: (middle_down, middle_up),
+        }
+        screen_w = max(1, int(user32.GetSystemMetrics(0)) - 1)
+        screen_h = max(1, int(user32.GetSystemMetrics(1)) - 1)
+
+        class MOUSEINPUT(ctypes.Structure):
+            _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long), ("mouseData", ctypes.c_ulong), ("dwFlags", ctypes.c_ulong), ("time", ctypes.c_ulong), ("dwExtraInfo", ctypes.c_ulonglong)]
+        class INPUT_UNION(ctypes.Union):
+            _fields_ = [("mi", MOUSEINPUT)]
+        class INPUT(ctypes.Structure):
+            _fields_ = [("type", ctypes.c_ulong), ("union", INPUT_UNION)]
+
+        def send(flags: int, x: int | None = None, y: int | None = None) -> None:
+            if x is None or y is None:
+                dx = dy = 0
+            else:
+                dx = int(round((max(0, min(screen_w, x)) * 65535) / screen_w))
+                dy = int(round((max(0, min(screen_h, y)) * 65535) / screen_h))
+                flags |= absolute_flag
+            payload = INPUT(0, INPUT_UNION(MOUSEINPUT(dx, dy, 0, flags, 0, 0)))
+            user32.SendInput(1, ctypes.byref(payload), ctypes.sizeof(INPUT))
+
+        pressed: list[mouse.Button] = []
+        try:
+            send(move_flag, start_x, start_y)
+            for btn in held_buttons:
+                down_flags = btn_map.get(btn)
+                if down_flags is None:
+                    continue
+                send(down_flags[0])
+                pressed.append(btn)
+            if not self._sleep_with_stop(engine, max(0, self.hold_delay_ms) / 1000.0):
+                return False
+            start_time = time.perf_counter()
+            for index in range(1, step_count + 1):
+                if engine._stop_evt.is_set():
+                    return False
+                elapsed_ratio = index / step_count
+                ratio = elapsed_ratio ** acceleration
+                send(move_flag, int(round(start_x + ((end_x - start_x) * ratio))), int(round(start_y + ((end_y - start_y) * ratio))))
+                if duration_s > 0 and index < step_count:
+                    target_elapsed = duration_s * elapsed_ratio
+                    while time.perf_counter() - start_time < target_elapsed:
+                        if engine._stop_evt.is_set():
+                            return False
+                        time.sleep(0.005)
+            if not self._sleep_with_stop(engine, max(0, self.release_delay_ms) / 1000.0):
+                return False
+            for btn in reversed(pressed):
+                up_flags = btn_map.get(btn)
+                if up_flags is not None:
+                    send(up_flags[1])
+            return True
+        except Exception:
+            return False
 
 
 @dataclass

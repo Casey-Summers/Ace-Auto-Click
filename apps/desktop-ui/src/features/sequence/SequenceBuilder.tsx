@@ -69,6 +69,14 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
     if (step.random_offset > 0) parts.push(`position +- ${step.random_offset}px`);
     return { title: `Move to ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
   }
+  if (step.type === "drag") {
+    const parts: string[] = [];
+    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
+    if (step.speed !== 500) parts.push(`speed ${step.speed}px/s`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    if (step.random_offset > 0) parts.push(`position +- ${step.random_offset}px`);
+    return { title: `Drag ${step.direction} ${step.length_px}px`, subtext: parts.join(" / ") };
+  }
   if (step.type === "wait") {
     const parts: string[] = [];
     if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);

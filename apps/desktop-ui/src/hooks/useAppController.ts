@@ -70,6 +70,7 @@ export function useAppController() {
       : (settings.action_icon_colors ?? {});
     document.documentElement.style.setProperty("--icon-click", colors.click ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-move", colors.move ?? "#55B3FF");
+    document.documentElement.style.setProperty("--icon-drag", colors.drag ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-wait", colors.wait ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-pixel", colors.pixel_check ?? "#55B3FF");
     document.documentElement.style.setProperty("--icon-key", colors.key_tap ?? "#55B3FF");
@@ -155,7 +156,7 @@ export function useAppController() {
   useEffect(() => {
     if (!pickingClickStepId && !samplingPixelStepId) return;
     const selectedStillActive = activeProfile.steps.some((step) => step.id === (pickingClickStepId || samplingPixelStepId));
-    const invalidClickMode = Boolean(pickingClickStepId) && (!selectedStep || selectedStep.id !== pickingClickStepId || (selectedStep.type !== "click" && selectedStep.type !== "move"));
+    const invalidClickMode = Boolean(pickingClickStepId) && (!selectedStep || selectedStep.id !== pickingClickStepId || (selectedStep.type !== "click" && selectedStep.type !== "move" && selectedStep.type !== "drag"));
     const invalidPixelMode = Boolean(samplingPixelStepId) && (!selectedStep || selectedStep.id !== samplingPixelStepId || selectedStep.type !== "pixel_check");
     if (!selectedStillActive || invalidClickMode || invalidPixelMode || settings.mode !== "advanced") {
       const sessionId = captureSessionId.current;
@@ -524,7 +525,7 @@ export function useAppController() {
   };
 
   const pickClickPosition = async () => {
-    if (!selectedStep || (selectedStep.type !== "click" && selectedStep.type !== "move")) return;
+    if (!selectedStep || (selectedStep.type !== "click" && selectedStep.type !== "move" && selectedStep.type !== "drag")) return;
     if (pickingClickStepId) return;
     const stepId = selectedStep.id;
     setPickingClickStepId(stepId);
@@ -559,7 +560,7 @@ export function useAppController() {
               ? {
                   ...profile,
                   steps: profile.steps.map((step) =>
-                    step.id === stepId && (step.type === "click" || step.type === "move")
+                    step.id === stepId && (step.type === "click" || step.type === "move" || step.type === "drag")
                       ? { ...step, x: position.x, y: position.y }
                       : step
                   )

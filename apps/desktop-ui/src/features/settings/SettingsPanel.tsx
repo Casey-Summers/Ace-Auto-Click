@@ -145,6 +145,7 @@ export function SettingsModal({
                     {[
                       ["click", "Click"],
                       ["move", "Move"],
+                      ["drag", "Drag"],
                       ["wait", "Wait"],
                       ["pixel_check", "Pixel Match"],
                       ["key_tap", "Key tap"],

@@ -6,13 +6,14 @@ from typing import Any
 
 from ace_auto_click.api.models import (
     ClickStepModel,
+    DragStepModel,
     LoopEndStepModel,
     LoopStartStepModel,
     MoveStepModel,
     WaitStepModel,
 )
 from ace_auto_click.api.sequence_service import compile_sequence_timeline
-from ace_auto_click.automation.actions import ActionStep, MoveStep, WaitStep
+from ace_auto_click.automation.actions import ActionStep, DragStep, MoveStep, WaitStep
 
 
 def timeline_signature(steps: list[Any]) -> list[tuple[str, str]]:
@@ -35,6 +36,16 @@ def test_compile_sequence_timeline_includes_move_steps() -> None:
         ClickStepModel(id="click-1"),
     ]) == [
         ("move-1", "execute"),
+        ("click-1", "execute"),
+    ]
+
+
+def test_compile_sequence_timeline_includes_drag_steps() -> None:
+    assert timeline_signature([
+        DragStepModel(id="drag-1", x=10, y=20),
+        ClickStepModel(id="click-1"),
+    ]) == [
+        ("drag-1", "execute"),
         ("click-1", "execute"),
     ]
 
@@ -151,11 +162,30 @@ def test_disabled_action_does_not_emit_completion_event() -> None:
 
 class RecordingMouse:
     def __init__(self) -> None:
-        self.position: tuple[int, int] | None = None
         self.clicks: list[Any] = []
+        self.presses: list[Any] = []
+        self.releases: list[Any] = []
+        self.positions: list[tuple[int, int]] = []
+        self.position: tuple[int, int] | None = None
+
+    @property
+    def position(self) -> tuple[int, int] | None:
+        return self._position
+
+    @position.setter
+    def position(self, value: tuple[int, int] | None) -> None:
+        self._position = value
+        if value is not None:
+            self.positions.append(value)
 
     def click(self, button: Any) -> None:
         self.clicks.append(button)
+
+    def press(self, button: Any) -> None:
+        self.presses.append(button)
+
+    def release(self, button: Any) -> None:
+        self.releases.append(button)
 
 
 def test_move_step_moves_mouse_without_clicking() -> None:
@@ -168,3 +198,47 @@ def test_move_step_moves_mouse_without_clicking() -> None:
 
     assert mouse.position == (10, 20)
     assert mouse.clicks == []
+
+
+def test_drag_step_holds_buttons_moves_and_releases() -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    step = DragStep(id="drag-1", type="drag", x=10, y=20, buttons=["left", "right"], angle_degrees=0, distance_px=30, duration_ms=0, interval_ms=0)
+
+    assert step.execute(engine) is True
+
+    assert len(mouse.presses) == 2
+    assert mouse.positions[0] == (10, 20)
+    assert mouse.position == (40, 20)
+    assert mouse.releases == list(reversed(mouse.presses))
+
+
+def test_drag_step_acceleration_changes_motion_curve() -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    step = DragStep(id="drag-1", type="drag", x=0, y=0, buttons=["left"], angle_degrees=0, distance_px=100, duration_ms=18, acceleration=2, interval_ms=0)
+
+    assert step.execute(engine) is True
+
+    assert mouse.positions[1][0] < 50
+    assert mouse.position == (100, 0)
+
+
+def test_drag_step_releases_buttons_when_stopped() -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+
+    def stop_after_press(button: Any) -> None:
+        mouse.presses.append(button)
+        engine._stop_evt.set()
+
+    mouse.press = stop_after_press  # type: ignore[method-assign]
+    step = DragStep(id="drag-1", type="drag", x=10, y=20, buttons=["left", "right"], angle_degrees=0, distance_px=30, duration_ms=10, interval_ms=0)
+
+    assert step.execute(engine) is False
+
+    assert len(mouse.presses) == 2
+    assert mouse.releases == list(reversed(mouse.presses))

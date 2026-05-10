@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 ProductName = "Ace Auto Click"
+MouseButtonName = Literal["left", "right", "middle"]
 
 
 class SimpleSettings(BaseModel):
@@ -53,6 +54,36 @@ class MoveStepModel(BaseStep):
     random_offset: Annotated[int, Field(ge=0, le=5_000)] = 0
 
 
+class DragStepModel(BaseStep):
+    type: Literal["drag"] = "drag"
+    x: int = 0
+    y: int = 0
+    buttons: Annotated[list[MouseButtonName], Field(min_length=1, max_length=3)] = Field(
+        default_factory=lambda: ["left", "right"]
+    )
+    direction: Literal["right", "left", "up", "down"] = "right"
+    length_px: Annotated[int, Field(ge=0, le=100_000)] = 100
+    speed: Annotated[int, Field(ge=50, le=5000)] = 500
+    acceleration: Annotated[float, Field(ge=0.2, le=5.0)] = 1.6
+    hold_delay_ms: Annotated[int, Field(ge=0, le=10_000)] = 60
+    release_delay_ms: Annotated[int, Field(ge=0, le=10_000)] = 0
+    button_order: Annotated[list[MouseButtonName], Field(min_length=1, max_length=3)] | None = None
+    random_offset: Annotated[int, Field(ge=0, le=5_000)] = 0
+
+    @field_validator("speed", mode="before")
+    @classmethod
+    def coerce_legacy_speed(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            legacy = value.strip().lower()
+            if legacy == "slow":
+                return 280
+            if legacy == "fast":
+                return 900
+            if legacy == "normal":
+                return 500
+        return value
+
+
 class WaitStepModel(BaseStep):
     type: Literal["wait"] = "wait"
     ms: Annotated[int, Field(ge=0, le=3_600_000)] = 1000
@@ -89,7 +120,7 @@ class LoopEndStepModel(BaseStep):
 
 
 ActionStepModel = Annotated[
-    Union[ClickStepModel, MoveStepModel, WaitStepModel, PixelCheckStepModel, KeyTapStepModel, LoopStartStepModel, LoopEndStepModel],
+    Union[ClickStepModel, MoveStepModel, DragStepModel, WaitStepModel, PixelCheckStepModel, KeyTapStepModel, LoopStartStepModel, LoopEndStepModel],
     Field(discriminator="type"),
 ]
 
@@ -104,7 +135,7 @@ class AutomationProfile(BaseModel):
     loops_count: Annotated[int, Field(ge=1, le=100_000)] = 1
     loops_infinite: bool = False
     action_icon_colors: dict[
-        Literal["click", "move", "wait", "pixel_check", "key_tap", "loop_start", "loop_end"],
+        Literal["click", "move", "drag", "wait", "pixel_check", "key_tap", "loop_start", "loop_end"],
         str,
     ] = Field(default_factory=dict)
 
@@ -140,7 +171,7 @@ class AppSettings(BaseModel):
     theme: Literal["dark", "light"] = "dark"
     icon_colors_profile_dependent: bool = False
     action_icon_colors: dict[
-        Literal["click", "move", "wait", "pixel_check", "key_tap", "loop_start", "loop_end"],
+        Literal["click", "move", "drag", "wait", "pixel_check", "key_tap", "loop_start", "loop_end"],
         str,
     ] = Field(default_factory=dict)
     profiles: list[AutomationProfile] = Field(default_factory=list)

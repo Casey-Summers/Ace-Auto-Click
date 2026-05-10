@@ -57,6 +57,7 @@ export const defaultSettings: AppSettings = {
   action_icon_colors: {
     click: "#55B3FF",
     move: "#55B3FF",
+    drag: "#55B3FF",
     wait: "#55B3FF",
     pixel_check: "#55B3FF",
     key_tap: "#55B3FF",

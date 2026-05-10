@@ -1,10 +1,11 @@
-import { ChevronDown, ChevronUp, Crosshair, Keyboard, MousePointer, MousePointerClick, Timer } from "lucide-react";
+import { ChevronDown, ChevronUp, Crosshair, Grab, Keyboard, MousePointer, MousePointerClick, Timer } from "lucide-react";
 
 import type { ActionStep } from "./types";
 
 export function stepIcon(type: ActionStep["type"]) {
   if (type === "click") return <MousePointerClick size={16} />;
   if (type === "move") return <MousePointer size={16} />;
+  if (type === "drag") return <Grab size={16} />;
   if (type === "wait") return <Timer size={16} />;
   if (type === "pixel_check") return <Crosshair size={16} />;
   if (type === "loop_start") return <ChevronDown size={16} />;
@@ -15,6 +16,7 @@ export function stepIcon(type: ActionStep["type"]) {
 export function stepTitle(step: ActionStep) {
   if (step.type === "click") return `Click ${step.button} at ${step.x}, ${step.y}`;
   if (step.type === "move") return `Move to ${step.x}, ${step.y}`;
+  if (step.type === "drag") return `Drag ${step.direction} ${step.length_px}px`;
   if (step.type === "wait") return `Wait ${step.ms}ms`;
   if (step.type === "pixel_check") return `Pixel Match ${step.x}, ${step.y}`;
   if (step.type === "loop_start") return step.loop_infinite ? "Loop start (infinite)" : `Loop start (${step.loop_count}x)`;
@@ -36,6 +38,9 @@ export function createStep(type: ActionStep["type"]): ActionStep {
   }
   if (type === "move") {
     return { ...base, type, x: 0, y: 0, random_offset: 0 };
+  }
+  if (type === "drag") {
+    return { ...base, type, x: 0, y: 0, buttons: ["left", "right"], direction: "right", length_px: 100, speed: 500, acceleration: 1.6, random_offset: 0 };
   }
   if (type === "wait") {
     return { ...base, type, ms: 1000, random_ms: 0 };
