@@ -10,6 +10,13 @@ from dataclasses import dataclass
 import pyautogui
 from pynput import keyboard, mouse
 
+from ace_auto_click.automation.keybinds import (
+    format_keybind,
+    mouse_button_name,
+    normalize_keybind_components,
+    normalize_modifier_key,
+)
+
 
 class InputCaptureTimeoutError(TimeoutError):
     """Raised when no matching global input arrives before the timeout."""
@@ -57,10 +64,10 @@ def _windows_cancel_requested(cancel_keys: set[str] | None) -> bool:
 
 
 def _side_button_key_name(button: object) -> str | None:
-    value = str(button).lower()
-    if value in {"button.x1", "x1", "btnm4", "mouse4", "mouse_4"}:
+    button_name = mouse_button_name(button)
+    if button_name == "x1":
         return "btnm4"
-    if value in {"button.x2", "x2", "btnm5", "mouse5", "mouse_5"}:
+    if button_name == "x2":
         return "btnm5"
     return None
 
@@ -72,27 +79,6 @@ def _control_char_to_key(char: str) -> str | None:
     if 1 <= codepoint <= 26:
         return chr(codepoint + 96)
     return None
-
-
-def _canonical_key_name(key: keyboard.Key | keyboard.KeyCode) -> str | None:
-    char = getattr(key, "char", None)
-    if char:
-        control_key = _control_char_to_key(str(char))
-        if control_key:
-            return control_key
-        if str(char).isprintable():
-            return str(char).lower()
-        return None
-    value = str(key).lower()
-    if value.startswith("key."):
-        return value.removeprefix("key.")
-    return None
-
-
-def _format_chord(modifiers: set[str], base: str) -> str:
-    modifier_order = {"ctrl": 0, "alt": 1, "shift": 2}
-    ordered_mods = sorted(modifiers, key=lambda item: modifier_order.get(item, 99))
-    return "+".join([*ordered_mods, base]) if ordered_mods else base
 
 
 def _poll_windows_keybind_mouse_button(
@@ -151,7 +137,7 @@ def _poll_windows_mouse_click(
 
         for vk_code, button_name in buttons:
             down = _button_down(vk_code)
-            if time.monotonic() >= armed_at and down and not was_down[vk_code]:
+            if time.monotonic() >= armed_at and down:
                 x, y = pyautogui.position()
                 return CapturedInput(kind="mouse_click", x=int(x), y=int(y), button=button_name)
             was_down[vk_code] = down
@@ -326,19 +312,8 @@ class InputCaptureSession:
         self._key_listener.start()
 
     def start_key_press(self) -> None:
+        self._armed_at = self._started_at
         modifiers: set[str] = set()
-        modifier_alias = {
-            "key.ctrl": "ctrl",
-            "key.ctrl_l": "ctrl",
-            "key.ctrl_r": "ctrl",
-            "key.shift": "shift",
-            "key.shift_l": "shift",
-            "key.shift_r": "shift",
-            "key.alt": "alt",
-            "key.alt_l": "alt",
-            "key.alt_r": "alt",
-            "key.alt_gr": "alt",
-        }
 
         def on_press(key: keyboard.Key | keyboard.KeyCode) -> bool | None:
             if time.monotonic() < self._armed_at:
@@ -347,16 +322,17 @@ class InputCaptureSession:
                 self.cancel("Input capture cancelled.")
                 return False
             value = str(key).lower()
-            alias = modifier_alias.get(value)
+            alias = normalize_modifier_key(value)
             if alias:
                 modifiers.add(alias)
                 return None
-            base = _canonical_key_name(key)
-            if not base:
+            normalized = normalize_keybind_components(key, modifiers)
+            if not normalized:
                 return None
-            if _control_char_to_key(str(getattr(key, "char", ""))) == base:
-                modifiers.add("ctrl")
-            self.complete(CapturedInput(kind="key_press", key=_format_chord(modifiers, base)))
+            next_modifiers, base = normalized
+            modifiers.clear()
+            modifiers.update(next_modifiers)
+            self.complete(CapturedInput(kind="key_press", key=format_keybind(modifiers, base)))
             return False
 
         def on_click(x: int, y: int, button: mouse.Button, pressed: bool) -> bool | None:
@@ -372,7 +348,7 @@ class InputCaptureSession:
 
         def on_release(key: keyboard.Key | keyboard.KeyCode) -> bool | None:
             value = str(key).lower()
-            alias = modifier_alias.get(value)
+            alias = normalize_modifier_key(value)
             if alias:
                 modifiers.discard(alias)
             return None

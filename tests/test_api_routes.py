@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from ace_auto_click.api import routes
 from ace_auto_click.api.app import app
+from ace_auto_click.api.models import ClickStepModel
 
 
 client = TestClient(app)
@@ -22,6 +24,26 @@ def test_sequence_route_rejects_empty_sequence() -> None:
     response = client.post("/run/sequence", json={"steps": [], "loops": 0})
 
     assert response.status_code == 400
+
+
+def test_run_toggle_uses_the_same_sequence_compiler(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_sequence_for_run(settings):
+      calls.append("sequence")
+      return [ClickStepModel(id="step-1", x=1, y=2)], 0
+
+    def fake_compile_sequence_timeline(steps):
+      calls.append("compile")
+      return []
+
+    monkeypatch.setattr(routes, "sequence_for_run", fake_sequence_for_run)
+    monkeypatch.setattr(routes, "compile_sequence_timeline", fake_compile_sequence_timeline)
+
+    response = client.post("/run/toggle")
+
+    assert response.status_code == 200
+    assert calls == ["sequence", "compile"]
 
 
 def test_emergency_stop_route_is_available() -> None:

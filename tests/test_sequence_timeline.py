@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from pynput import keyboard
+from pynput import keyboard, mouse as pynput_mouse
 
 from ace_auto_click.api.models import (
     ClickStepModel,
@@ -18,7 +18,7 @@ from ace_auto_click.api.models import (
 )
 from ace_auto_click.api.sequence_service import compile_sequence_timeline
 from ace_auto_click.automation.engine import ClickEngine
-from ace_auto_click.automation.actions import ActionStep, DragStep, KeyHoldStep, KeyTapStep, MoveStep, WaitStep
+from ace_auto_click.automation.actions import ActionStep, ClickStep, DragStep, KeyHoldStep, KeyTapStep, MoveStep, WaitStep
 
 
 def timeline_signature(steps: list[Any]) -> list[tuple[str, str]]:
@@ -148,12 +148,14 @@ class RecordingEngine:
     def __init__(self) -> None:
         self._stop_evt = threading.Event()
         self.events: list[tuple[str, str]] = []
+        self.event_details: list[dict[str, Any] | None] = []
         self.current_step_state: str | None = None
         self.status_messages: list[str] = []
         self.side_buttons_supported = True
 
-    def emit_execution_event(self, step_id: str, step_type: str, phase: str) -> None:
+    def emit_execution_event(self, step_id: str, step_type: str, phase: str, details: dict[str, Any] | None = None) -> None:
         self.events.append((step_id, phase))
+        self.event_details.append(details)
 
     def _on_status(self, message: str) -> None:
         self.status_messages.append(message)
@@ -420,7 +422,7 @@ def test_key_tap_step_clicks_side_mouse_button() -> None:
     step = KeyTapStep(id="tap-mouse-4", type="key_tap", key="btnm4", interval_ms=0)
 
     assert step.execute(engine) is True
-    assert mouse.clicks == [getattr(mouse.Button, "x1", None)]
+    assert mouse.clicks == [pynput_mouse.Button.x1]
 
 
 def test_key_tap_step_supports_shifted_number_keys() -> None:
@@ -433,7 +435,25 @@ def test_key_tap_step_supports_shifted_number_keys() -> None:
 
     assert kb.presses[0] == keyboard.Key.shift
     assert kb.presses[1] == "6"
-    assert kb.releases == [keyboard.Key.shift]
+    assert kb.releases == ["6", keyboard.Key.shift]
+    details = engine.event_details[0]
+    assert details is not None
+    assert details["dispatch_path"] == "keyboard_tap"
+    assert details["configured_combo"] == "shift+6"
+    assert details["operations"] == ["press shift", "tap 6", "release shift"]
+
+
+def test_key_tap_step_normalizes_shifted_symbol_digits() -> None:
+    engine = RecordingEngine()
+    kb = RecordingKeyboard()
+    engine._kb_ctl = kb  # type: ignore[attr-defined]
+    step = KeyTapStep(id="tap-1", type="key_tap", key="shift+!", interval_ms=0)
+
+    assert step.execute(engine) is True
+
+    assert kb.presses[0] == keyboard.Key.shift
+    assert kb.presses[1] == "1"
+    assert kb.releases == ["1", keyboard.Key.shift]
 
 
 def test_key_tap_step_supports_modded_mouse_buttons() -> None:
@@ -447,8 +467,12 @@ def test_key_tap_step_supports_modded_mouse_buttons() -> None:
     assert step.execute(engine) is True
 
     assert kb.presses == [keyboard.Key.shift]
-    assert mouse.clicks == [getattr(mouse.Button, "x1", None)]
+    assert mouse.clicks == [pynput_mouse.Button.x1]
     assert kb.releases == [keyboard.Key.shift]
+    details = engine.event_details[0]
+    assert details is not None
+    assert details["dispatch_path"] == "mouse_side_button"
+    assert details["operations"] == ["press shift", "click x1", "release shift"]
 
 
 def test_key_hold_step_holds_side_mouse_button() -> None:
@@ -458,8 +482,8 @@ def test_key_hold_step_holds_side_mouse_button() -> None:
     step = KeyHoldStep(id="hold-mouse-5", type="key_hold", key="btnm5", hold_ms=1, interval_ms=0)
 
     assert step.execute(engine) is True
-    assert mouse.presses == [getattr(mouse.Button, "x2", None)]
-    assert mouse.releases == [getattr(mouse.Button, "x2", None)]
+    assert mouse.presses == [pynput_mouse.Button.x2]
+    assert mouse.releases == [pynput_mouse.Button.x2]
 
 
 def test_key_hold_step_supports_shifted_number_keys() -> None:
@@ -472,6 +496,23 @@ def test_key_hold_step_supports_shifted_number_keys() -> None:
 
     assert kb.presses == [keyboard.Key.shift, "6"]
     assert kb.releases == ["6", keyboard.Key.shift]
+    details = engine.event_details[0]
+    assert details is not None
+    assert details["dispatch_path"] == "keyboard_hold"
+    assert details["configured_combo"] == "shift+6"
+    assert details["operations"] == ["press shift", "press 6", "release 6", "release shift"]
+
+
+def test_key_hold_step_normalizes_shifted_symbol_digits() -> None:
+    engine = RecordingEngine()
+    kb = RecordingKeyboard()
+    engine._kb_ctl = kb  # type: ignore[attr-defined]
+    step = KeyHoldStep(id="hold-1", type="key_hold", key="shift+!", hold_ms=1, interval_ms=0)
+
+    assert step.execute(engine) is True
+
+    assert kb.presses == [keyboard.Key.shift, "1"]
+    assert kb.releases == ["1", keyboard.Key.shift]
 
 
 def test_key_hold_step_supports_modded_mouse_buttons() -> None:
@@ -485,8 +526,8 @@ def test_key_hold_step_supports_modded_mouse_buttons() -> None:
     assert step.execute(engine) is True
 
     assert kb.presses == [keyboard.Key.shift]
-    assert mouse.presses == [getattr(mouse.Button, "x2", None)]
-    assert mouse.releases == [getattr(mouse.Button, "x2", None)]
+    assert mouse.presses == [pynput_mouse.Button.x2]
+    assert mouse.releases == [pynput_mouse.Button.x2]
     assert kb.releases == [keyboard.Key.shift]
 
 

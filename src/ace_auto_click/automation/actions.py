@@ -9,6 +9,7 @@ from typing import Any, Tuple
 from pynput import keyboard, mouse
 
 from ace_auto_click.automation.pixels import get_pixel_rgb, rgb_close
+from ace_auto_click.automation.keybinds import normalize_side_button, parse_keybind_text
 
 
 @dataclass
@@ -19,6 +20,7 @@ class ActionStep:
     repeats: int = 1
     interval_ms: int = 100  # pre-step delay
     randomness_ms: int = 0  # randomness for interval
+    _execution_details: dict[str, Any] | None = None
 
     def _compute_delay_s(self) -> float:
         delay_s = max(0, int(self.interval_ms)) / 1000.0
@@ -49,23 +51,30 @@ class ActionStep:
                 return False
 
             try:
+                self._validate(engine)
                 if hasattr(engine, "current_step_state"):
                     engine.current_step_state = "running"
                 if hasattr(engine, "emit_execution_event"):
-                    engine.emit_execution_event(self.id, self.type, "step_execute")
+                    engine.emit_execution_event(self.id, self.type, "step_execute", self._execution_details)
                 if not self._run(engine):
+                    self._execution_details = None
                     return False
             except Exception as exc:
                 self._report_dispatch_failure(engine, str(exc))
+                self._execution_details = None
                 return False
 
             if hasattr(engine, "emit_execution_event"):
                 engine.emit_execution_event(self.id, self.type, "step_complete")
+            self._execution_details = None
 
         return True
 
     def _run(self, engine: Any) -> bool:
         raise NotImplementedError
+
+    def _validate(self, engine: Any) -> None:
+        return None
 
     def _report_dispatch_failure(self, engine: Any, message: str) -> None:
         if hasattr(engine, "_on_status"):
@@ -148,7 +157,7 @@ class DragStep(PointerTargetStep):
         acceleration = max(0.2, min(5.0, float(self.acceleration)))
         button_names = list(dict.fromkeys(self.button_order or self.buttons or ["left", "right"]))
         held_buttons = [self._button(name) for name in button_names]
-        if self._run_with_sendinput(engine, start_x, start_y, end_x, end_y, held_buttons, duration_s, step_count, acceleration):
+        if getattr(engine, "use_sendinput_mouse", False) and self._run_with_sendinput(engine, start_x, start_y, end_x, end_y, held_buttons, duration_s, step_count, acceleration):
             return True
         return self._run_with_pynput_fallback(engine, start_x, start_y, end_x, end_y, held_buttons, duration_s, step_count, acceleration)
 
@@ -308,13 +317,41 @@ class PixelCheckStep(ActionStep):
         return True
 
 
+SHIFTED_SYMBOL_BASES: dict[str, str] = {
+    "!": "1",
+    "@": "2",
+    "#": "3",
+    "$": "4",
+    "%": "5",
+    "^": "6",
+    "&": "7",
+    "*": "8",
+    "(": "9",
+    ")": "0",
+    "_": "-",
+    "+": "=",
+    "{": "[",
+    "}": "]",
+    "|": "\\",
+    ":": ";",
+    '"': "'",
+    "<": ",",
+    ">": ".",
+    "?": "/",
+    "~": "`",
+}
+
+
 @dataclass
 class KeyTapStep(ActionStep):
     key: str = "space"
 
     def _mouse_button(self, engine: Any) -> Any | None:
-        normalized = (self.key or "").strip().lower().replace(" ", "")
-        button_attr = {"btnm4": "x1", "mouse4": "x1", "button.x1": "x1", "btnm5": "x2", "mouse5": "x2", "button.x2": "x2"}.get(normalized)
+        button_attr = None
+        for part in (self.key or "").split("+"):
+            button_attr = normalize_side_button(part)
+            if button_attr:
+                break
         if not button_attr:
             return None
         side_buttons_supported = bool(getattr(engine, "side_buttons_supported", hasattr(mouse.Button, "x1") and hasattr(mouse.Button, "x2")))
@@ -326,36 +363,55 @@ class KeyTapStep(ActionStep):
         return button
 
     def _parse_combo(self) -> tuple[list[keyboard.Key], str | keyboard.Key]:
-        parts = [part.strip().lower() for part in (self.key or "").split("+") if part.strip()]
-        mod_map: dict[str, keyboard.Key] = {"ctrl": keyboard.Key.ctrl, "shift": keyboard.Key.shift, "alt": keyboard.Key.alt}
-        mods: list[keyboard.Key] = []
-        base: str | keyboard.Key = "space"
-        for part in parts:
-            if part in mod_map:
-                mods.append(mod_map[part])
-            elif part.startswith("key."):
-                base = getattr(keyboard.Key, part.split("key.", 1)[1], part)
-            else:
-                base = part
-        return mods, base
+        return parse_keybind_text(self.key or "")
 
-    def _run_with_mods(self, engine: Any, mods: list[keyboard.Key], action: Any) -> bool:
+    def _key_name(self, value: Any) -> str:
+        return str(value).replace("Key.", "").lower()
+
+    def _run_with_mods(self, engine: Any, mods: list[keyboard.Key], action: Any, operations: list[str]) -> bool:
         for mod in mods:
             engine._kb_ctl.press(mod)
+            operations.append(f"press {self._key_name(mod)}")
         try:
             action()
             return True
         finally:
             for mod in reversed(mods):
                 engine._kb_ctl.release(mod)
+                operations.append(f"release {self._key_name(mod)}")
+
+    def _tap_key(self, engine: Any, key: str | keyboard.Key, operations: list[str]) -> None:
+        tap = getattr(engine._kb_ctl, "tap", None)
+        if callable(tap):
+            operations.append(f"tap {self._key_name(key)}")
+            tap(key)
+            return
+        operations.append(f"press {self._key_name(key)}")
+        engine._kb_ctl.press(key)
+        operations.append(f"release {self._key_name(key)}")
+        engine._kb_ctl.release(key)
 
     def _run(self, engine: Any) -> bool:
         mods, base = self._parse_combo()
         mouse_button = self._mouse_button(engine)
+        operations: list[str] = []
+        details = {
+            "configured_combo": self.key or "",
+            "parsed_modifiers": [self._key_name(mod) for mod in mods],
+            "parsed_base": self._key_name(base),
+            "dispatch_path": "keyboard_tap",
+            "operations": operations,
+        }
+        self._execution_details = details
         if mouse_button is not None:
-            return self._run_with_mods(engine, mods, lambda: engine._mouse_ctl.click(mouse_button))
+            details["dispatch_path"] = "mouse_side_button"
+            details["parsed_base"] = str(mouse_button).replace("Button.", "").lower()
+            return self._run_with_mods(engine, mods, lambda: (operations.append(f"click {details['parsed_base']}"), engine._mouse_ctl.click(mouse_button)), operations)
 
-        return self._run_with_mods(engine, mods, lambda: engine._kb_ctl.tap(base))
+        return self._run_with_mods(engine, mods, lambda: self._tap_key(engine, base, operations), operations)
+
+    def _validate(self, engine: Any) -> None:
+        self._mouse_button(engine)
 
 
 @dataclass
@@ -364,8 +420,11 @@ class KeyHoldStep(ActionStep):
     hold_ms: int = 300
 
     def _mouse_button(self, engine: Any) -> Any | None:
-        normalized = (self.key or "").strip().lower().replace(" ", "")
-        button_attr = {"btnm4": "x1", "mouse4": "x1", "button.x1": "x1", "btnm5": "x2", "mouse5": "x2", "button.x2": "x2"}.get(normalized)
+        button_attr = None
+        for part in (self.key or "").split("+"):
+            button_attr = normalize_side_button(part)
+            if button_attr:
+                break
         if not button_attr:
             return None
         side_buttons_supported = bool(getattr(engine, "side_buttons_supported", hasattr(mouse.Button, "x1") and hasattr(mouse.Button, "x2")))
@@ -377,28 +436,31 @@ class KeyHoldStep(ActionStep):
         return button
 
     def _parse_combo(self) -> tuple[list[keyboard.Key], str | keyboard.Key]:
-        parts = [part.strip().lower() for part in (self.key or "").split("+") if part.strip()]
-        mod_map: dict[str, keyboard.Key] = {"ctrl": keyboard.Key.ctrl, "shift": keyboard.Key.shift, "alt": keyboard.Key.alt}
-        mods: list[keyboard.Key] = []
-        base: str | keyboard.Key = "space"
-        for part in parts:
-            if part in mod_map:
-                mods.append(mod_map[part])
-            elif part.startswith("key."):
-                base = getattr(keyboard.Key, part.split("key.", 1)[1], part)
-            else:
-                base = part
-        return mods, base
+        return parse_keybind_text(self.key or "")
 
     def _run(self, engine: Any) -> bool:
         mods, resolved = self._parse_combo()
         mouse_button = self._mouse_button(engine)
         delay_s = max(0, int(self.hold_ms)) / 1000.0
+        operations: list[str] = []
+        details = {
+            "configured_combo": self.key or "",
+            "parsed_modifiers": [str(mod).replace("Key.", "").lower() for mod in mods],
+            "parsed_base": str(resolved).replace("Key.", "").lower(),
+            "dispatch_path": "keyboard_hold",
+            "hold_ms": int(self.hold_ms),
+            "operations": operations,
+        }
+        self._execution_details = details
 
         if mouse_button is not None:
+            details["dispatch_path"] = "mouse_side_button"
+            details["parsed_base"] = str(mouse_button).replace("Button.", "").lower()
             for mod in mods:
                 engine._kb_ctl.press(mod)
+                operations.append(f"press {str(mod).replace('Key.', '').lower()}")
             try:
+                operations.append(f"press {details['parsed_base']}")
                 engine._mouse_ctl.press(mouse_button)
                 start = time.perf_counter()
                 while time.perf_counter() - start < delay_s:
@@ -408,12 +470,16 @@ class KeyHoldStep(ActionStep):
                 return True
             finally:
                 engine._mouse_ctl.release(mouse_button)
+                operations.append(f"release {details['parsed_base']}")
                 for mod in reversed(mods):
                     engine._kb_ctl.release(mod)
+                    operations.append(f"release {str(mod).replace('Key.', '').lower()}")
 
         for mod in mods:
             engine._kb_ctl.press(mod)
+            operations.append(f"press {str(mod).replace('Key.', '').lower()}")
         engine._kb_ctl.press(resolved)
+        operations.append(f"press {str(resolved).replace('Key.', '').lower()}")
         if hasattr(engine, "_register_held_key"):
             engine._register_held_key(resolved)
             for mod in mods:
@@ -431,5 +497,10 @@ class KeyHoldStep(ActionStep):
                 for mod in mods:
                     engine._unregister_held_key(mod)
             engine._kb_ctl.release(resolved)
+            operations.append(f"release {str(resolved).replace('Key.', '').lower()}")
             for mod in reversed(mods):
                 engine._kb_ctl.release(mod)
+                operations.append(f"release {str(mod).replace('Key.', '').lower()}")
+
+    def _validate(self, engine: Any) -> None:
+        self._mouse_button(engine)

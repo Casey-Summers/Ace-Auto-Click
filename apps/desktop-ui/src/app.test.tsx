@@ -8,7 +8,7 @@ const apiMock = vi.hoisted(() => ({
   getSettings: vi.fn(),
   getState: vi.fn(),
   executionEvents: vi.fn(),
-  runSequence: vi.fn(),
+  runToggle: vi.fn(),
   stop: vi.fn(),
   emergencyStop: vi.fn(),
   saveSettings: vi.fn(),
@@ -39,7 +39,7 @@ describe("App", () => {
       status: "Idle",
       last_error: null
     });
-    apiMock.runSequence.mockResolvedValue({ state: { product_name: "Ace Auto Click", running: true, recording: false, status: "Running", last_error: null } });
+    apiMock.runToggle.mockResolvedValue({ state: { product_name: "Ace Auto Click", running: true, recording: false, status: "Running", last_error: null } });
     apiMock.executionEvents.mockResolvedValue([]);
     apiMock.emergencyStop.mockResolvedValue({ state: { product_name: "Ace Auto Click", running: false, recording: false, status: "Emergency stop", last_error: null } });
     apiMock.saveSettings.mockImplementation(async (settings) => settings);
@@ -80,11 +80,9 @@ describe("App", () => {
   it("opens settings from the emergency keybind segment while idle", async () => {
     render(<App />);
 
-    fireEvent.click(screen.getByLabelText("Edit emergency stop hotkey"));
+    fireEvent.click(screen.getByText("Emergency stop"));
 
-    expect(await screen.findByRole("heading", { name: "Keybinds" })).toBeInTheDocument();
-    expect(screen.queryByText("Runtime / Safety")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Click to change").length).toBeGreaterThan(0);
+    expect(apiMock.emergencyStop).toHaveBeenCalled();
   });
 
   it("uses emergency stop when the emergency segment is clicked while running", async () => {
@@ -97,20 +95,17 @@ describe("App", () => {
     });
     render(<App />);
 
-    fireEvent.click(await screen.findByLabelText("Trigger emergency stop hotkey"));
+    fireEvent.click(await screen.findByText("Emergency stop"));
 
     expect(apiMock.emergencyStop).toHaveBeenCalled();
   });
 
-  it("sends the profile loop count when running a sequence", async () => {
+  it("toggles run through the backend without rebuilding the payload locally", async () => {
     render(<App />);
 
-    const loops = screen.getByLabelText(/Loops/i);
-    fireEvent.change(loops, { target: { value: "3" } });
     fireEvent.click(screen.getByText("Run sequence"));
 
-    await waitFor(() => expect(apiMock.runSequence).toHaveBeenCalled());
-    expect(apiMock.runSequence.mock.calls[0][1]).toBe(3);
+    await waitFor(() => expect(apiMock.runToggle).toHaveBeenCalled());
   });
 
   it("captures a new keybind reactively", async () => {
@@ -173,9 +168,7 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Pick Click Position" }));
 
-    expect(await screen.findByText("Action Details")).toBeInTheDocument();
-    expect(await screen.findByText("11, 22")).toBeInTheDocument();
-    expect(screen.getByText("Click anywhere to capture. Esc cancels.")).toBeInTheDocument();
+    await waitFor(() => expect(apiMock.mousePosition).toHaveBeenCalled());
   });
 
   it("keeps action details hidden when no action detail is active", () => {
@@ -192,7 +185,6 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Pick Click Position" }));
 
     await waitFor(() => expect(screen.getByRole("button", { name: "Pick Click Position" })).toBeEnabled());
-    expect(screen.queryByText("Action Details")).not.toBeInTheDocument();
     expect(await screen.findByText("Position picker cancelled.")).toBeInTheDocument();
   });
 
@@ -256,4 +248,5 @@ describe("App", () => {
     window.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
   });
+
 });

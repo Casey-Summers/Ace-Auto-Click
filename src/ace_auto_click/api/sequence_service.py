@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import pyautogui
 from fastapi import HTTPException
@@ -63,8 +63,12 @@ def loop_iterations(step: LoopStartStepModel, infinite_cap: int | None = None) -
     return max(1, step.loop_count, step.repeats)
 
 
-def expand_loop_markers(steps: list[ActionStepModel]) -> list[ActionStepModel]:
-    output: list[ActionStepModel] = []
+def _walk_loop_ranges(
+    steps: list[ActionStepModel],
+    on_action: Callable[[ActionStepModel], list[Any]],
+    on_loop: Callable[[LoopStartStepModel, list[Any], LoopEndStepModel], list[Any]],
+) -> list[Any]:
+    output: list[Any] = []
     index = 0
     while index < len(steps):
         step = steps[index]
@@ -83,60 +87,53 @@ def expand_loop_markers(steps: list[ActionStepModel]) -> list[ActionStepModel]:
             if not step.enabled:
                 index = end_index
                 continue
-            body = expand_loop_markers(steps[index + 1 : end_index - 1])
-            if step.loop_infinite:
-                output.extend(body * 1000)
-            else:
-                output.extend(body * loop_iterations(step))
+            body = _walk_loop_ranges(steps[index + 1 : end_index - 1], on_action, on_loop)
+            end_step = steps[end_index - 1]
+            output.extend(on_loop(step, body, end_step))
             index = end_index
             continue
         if isinstance(step, LoopEndStepModel):
             raise HTTPException(status_code=400, detail=f"Unmatched loop_end for {step.loop_id}")
-        output.append(step)
+        output.extend(on_action(step))
         index += 1
     return output
 
 
+def expand_loop_markers(steps: list[ActionStepModel]) -> list[ActionStepModel]:
+    return _walk_loop_ranges(
+        steps,
+        lambda step: [step],
+        lambda step, body, _end_step: body * (1000 if step.loop_infinite else loop_iterations(step)),
+    )  # type: ignore[return-value]
+
+
 def compile_sequence_timeline(steps: list[ActionStepModel]) -> list[SequenceTimelineNode]:
-    timeline: list[SequenceTimelineNode] = []
+    def compile_action(step: ActionStepModel) -> list[SequenceTimelineNode]:
+        if step.enabled is not True:
+            return []
+        return [SequenceTimelineNode(step.id, step.type, "execute", to_action_step(step))]
 
-    def append_range(items: list[ActionStepModel]) -> None:
-        index = 0
-        while index < len(items):
-            step = items[index]
-            if isinstance(step, LoopStartStepModel):
-                depth = 1
-                end_index = index + 1
-                while end_index < len(items) and depth > 0:
-                    probe = items[end_index]
-                    if isinstance(probe, LoopStartStepModel) and probe.loop_id == step.loop_id:
-                        depth += 1
-                    elif isinstance(probe, LoopEndStepModel) and probe.loop_id == step.loop_id:
-                        depth -= 1
-                    end_index += 1
-                if depth != 0:
-                    raise HTTPException(status_code=400, detail=f"Unmatched loop_start for {step.loop_id}")
-                if step.enabled is not True:
-                    index = end_index
-                    continue
-                body = items[index + 1 : end_index - 1]
-                end_step = items[end_index - 1]
-                iterations = loop_iterations(step, infinite_cap=1000)
-                for iteration in range(iterations):
-                    timeline.append(SequenceTimelineNode(step.id, step.type, "loop_enter"))
-                    append_range(body)
-                    if isinstance(end_step, LoopEndStepModel) and end_step.enabled is True:
-                        timeline.append(SequenceTimelineNode(end_step.id, end_step.type, "loop_repeat" if iteration < iterations - 1 else "loop_exit"))
-                index = end_index
-                continue
-            if isinstance(step, LoopEndStepModel):
-                raise HTTPException(status_code=400, detail=f"Unmatched loop_end for {step.loop_id}")
-            if step.enabled is True:
-                timeline.append(SequenceTimelineNode(step.id, step.type, "execute", to_action_step(step)))
-            index += 1
+    def compile_loop(step: LoopStartStepModel, body: list[Any], end_step: LoopEndStepModel) -> list[SequenceTimelineNode]:
+        iterations = loop_iterations(step, infinite_cap=1000)
+        output: list[SequenceTimelineNode] = []
+        for iteration in range(iterations):
+            output.append(SequenceTimelineNode(step.id, step.type, "loop_enter"))
+            output.extend(body)
+            if end_step.enabled is True:
+                output.append(
+                    SequenceTimelineNode(
+                        end_step.id,
+                        end_step.type,
+                        "loop_repeat" if iteration < iterations - 1 else "loop_exit",
+                    )
+                )
+        return output
 
-    append_range(steps)
-    return timeline
+    return _walk_loop_ranges(
+        steps,
+        compile_action,
+        compile_loop,
+    )
 
 
 def to_action_step(step: ActionStepModel) -> ClickStep | MoveStep | DragStep | WaitStep | PixelCheckStep | KeyTapStep | KeyHoldStep:

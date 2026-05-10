@@ -83,6 +83,18 @@ class DragStepModel(BaseStep):
                 return 500
         return value
 
+    @property
+    def angle_degrees(self) -> float:
+        return 0.0
+
+    @property
+    def distance_px(self) -> int:
+        return self.length_px
+
+    @property
+    def duration_ms(self) -> int:
+        return 120
+
 
 class WaitStepModel(BaseStep):
     type: Literal["wait"] = "wait"
@@ -217,9 +229,17 @@ class ExecutionEvent(BaseModel):
     run_id: int
     sequence_no: int
     ts_ms: int
+    details: dict[str, Any] | None = None
 
 
 class CommandResult(BaseModel):
     ok: bool = True
     state: RuntimeState
     message: str = ""
+
+
+class BootstrapData(BaseModel):
+    settings: AppSettings
+    state: RuntimeState
+    profiles: list[ProfileFile] = Field(default_factory=list)
+    profile_status: ProfileDirectoryStatus

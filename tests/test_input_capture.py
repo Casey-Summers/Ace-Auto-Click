@@ -289,3 +289,53 @@ def test_key_capture_session_ignores_modifier_only_until_base_key(monkeypatch: p
     assert snap.status == "complete"
     assert snap.result is not None
     assert snap.result.key == "shift+z"
+
+
+def test_key_capture_session_normalizes_shifted_number_to_shift_combo(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeKeyListener:
+        def __init__(self, on_press, on_release):
+            self.on_press = on_press
+            self.on_release = on_release
+
+        def start(self) -> None:
+            self.on_press(input_capture.keyboard.Key.shift)
+            self.on_press(type("K", (), {"char": "!"})())
+
+        def stop(self) -> None:
+            return None
+
+        def join(self, timeout=None) -> None:
+            return None
+
+    monkeypatch.setattr(input_capture.keyboard, "Listener", FakeKeyListener)
+    session = input_capture.InputCaptureSession("key-shift-1", timeout_s=1, cancel_keys={"esc"})
+    session.start_key_press()
+    snap = session.snapshot()
+    assert snap.status == "complete"
+    assert snap.result is not None
+    assert snap.result.key == "shift+1"
+
+
+def test_key_capture_session_preserves_ctrl_digit_combo(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeKeyListener:
+        def __init__(self, on_press, on_release):
+            self.on_press = on_press
+            self.on_release = on_release
+
+        def start(self) -> None:
+            self.on_press(input_capture.keyboard.Key.ctrl_l)
+            self.on_press(type("K", (), {"char": "1"})())
+
+        def stop(self) -> None:
+            return None
+
+        def join(self, timeout=None) -> None:
+            return None
+
+    monkeypatch.setattr(input_capture.keyboard, "Listener", FakeKeyListener)
+    session = input_capture.InputCaptureSession("key-ctrl-1", timeout_s=1, cancel_keys={"esc"})
+    session.start_key_press()
+    snap = session.snapshot()
+    assert snap.status == "complete"
+    assert snap.result is not None
+    assert snap.result.key == "ctrl+1"

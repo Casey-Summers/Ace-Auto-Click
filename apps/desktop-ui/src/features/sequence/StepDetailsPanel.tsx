@@ -6,6 +6,7 @@ import { Keycap } from "../../components/keycap";
 import { Button } from "../../components/ui/button";
 import { Input, Select } from "../../components/ui/input";
 import { displayKeybind } from "../../lib/keybinds";
+import { formatMs, stepTitle } from "../../lib/sequence";
 import type { ActionStep, NormalProfileSettings, Point, Rgb } from "../../lib/types";
 
 function FieldRow({ title, info, children }: { title: string; info: string; children: ReactNode }) {
@@ -100,7 +101,7 @@ function CoordinatePreview({ x, y, offset }: { x: number; y: number; offset: num
 function TimingPreview({ baseMs, randomMs, repeats }: { baseMs: number; randomMs: number; repeats: number }) {
   const total = Math.max(0, baseMs) * Math.max(1, repeats);
   const jitter = Math.max(0, randomMs) * Math.max(1, repeats);
-  return <p className="text-xs text-muted-foreground">Timing: <span className="font-mono">{total}ms</span>{jitter > 0 ? <> + up to <span className="font-mono">{jitter}ms</span> random</> : null} per step cycle.</p>;
+  return <p className="text-xs text-muted-foreground">Timing: <span className="font-mono">{formatMs(total)}</span>{jitter > 0 ? <> + up to <span className="font-mono">{formatMs(jitter)}</span> random</> : null} per step cycle.</p>;
 }
 
 function toggleDragButton(buttons: Array<"left" | "right" | "middle">, button: "left" | "right" | "middle") {
@@ -206,7 +207,7 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
 
           {step.type === "key_hold" ? <FieldRow title="Hold Duration (ms)" info="How long to keep the key pressed before release."><Input type="number" value={step.hold_ms} onChange={(event) => onChange({ hold_ms: Number(event.target.value) })} /></FieldRow> : null}
 
-          {step.type === "loop_start" ? <><FieldRow title="Loop Count" info="Number of loop iterations when not infinite."><Input type="number" value={step.loop_count} disabled={step.loop_infinite} onChange={(event) => onChange({ loop_count: Math.max(1, Number(event.target.value) || 1) })} /></FieldRow><FieldRow title="Infinite Loop" info="Run loop body indefinitely until stopped."><label className="flex items-center justify-between rounded-lg bg-background/70 p-2 text-sm">Enable<input type="checkbox" checked={step.loop_infinite} onChange={(event) => onChange({ loop_infinite: event.target.checked })} /></label></FieldRow><p className="text-xs text-muted-foreground">Loop summary: {step.loop_infinite ? "Infinite iterations until stopped." : `${step.loop_count} iterations.`}</p></> : null}
+          {step.type === "loop_start" ? <><FieldRow title="Loop Count" info="Number of loop iterations when not infinite."><Input type="number" value={step.loop_count} disabled={step.loop_infinite} onChange={(event) => onChange({ loop_count: Math.max(1, Number(event.target.value) || 1) })} /></FieldRow><FieldRow title="Infinite Loop" info="Run loop body indefinitely until stopped."><label className="flex items-center justify-between rounded-lg bg-background/70 p-2 text-sm">Enable<input type="checkbox" checked={step.loop_infinite} onChange={(event) => onChange({ loop_infinite: event.target.checked })} /></label></FieldRow><p className="text-xs text-muted-foreground">Loop summary: {stepTitle(step)}</p></> : null}
         </div>
 
         <ActionDetailsSection

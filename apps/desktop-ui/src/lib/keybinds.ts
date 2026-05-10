@@ -34,11 +34,36 @@ const MODIFIER_LABELS: Record<string, string> = {
   cmd: "META"
 };
 
+const SHIFTED_SYMBOL_BASES: Record<string, string> = {
+  "!": "1",
+  "@": "2",
+  "#": "3",
+  "$": "4",
+  "%": "5",
+  "^": "6",
+  "&": "7",
+  "*": "8",
+  "(": "9",
+  ")": "0",
+  _: "-",
+  "+": "=",
+  "{": "[",
+  "}": "]",
+  "|": "\\",
+  ":": ";",
+  '"': "'",
+  "<": ",",
+  ">": ".",
+  "?": "/",
+  "~": "`"
+};
+
 function displayPart(part: string): string | null {
   const normalized = part.trim().toLowerCase().replace(/^key\./, "");
   if (!normalized || normalized === "?" || /[\u0000-\u001f\u007f]/.test(normalized)) return null;
   if (MODIFIER_LABELS[normalized]) return MODIFIER_LABELS[normalized];
   if (SPECIAL_KEY_LABELS[normalized]) return SPECIAL_KEY_LABELS[normalized];
+  if (SHIFTED_SYMBOL_BASES[normalized]) return SHIFTED_SYMBOL_BASES[normalized]!.toUpperCase();
   if (/^f(?:[1-9]|1\d|2[0-4])$/.test(normalized)) return normalized.toUpperCase();
   if (/^[a-z0-9]$/.test(normalized)) return normalized.toUpperCase();
   return null;
@@ -46,7 +71,11 @@ function displayPart(part: string): string | null {
 
 export function displayKeybind(value?: string | null): string {
   if (!value || !value.trim() || value.trim() === "?") return "Unset";
-  const parts = value.split("+").map(displayPart);
+  const rawParts = value.split("+").map((part) => part.trim()).filter(Boolean);
+  const parts = rawParts.map(displayPart);
   if (parts.length === 0 || parts.some((part) => part === null)) return "Unset";
+  if (rawParts.length === 1 && rawParts[0] in SHIFTED_SYMBOL_BASES) {
+    return `SHIFT + ${SHIFTED_SYMBOL_BASES[rawParts[0]]!.toUpperCase()}`;
+  }
   return parts.join(" + ");
 }

@@ -18,8 +18,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     next_app.include_router(router)
-    next_app.add_event_handler("startup", startup)
-    next_app.add_event_handler("shutdown", shutdown)
+    next_app.on_event("startup")(startup)
+    next_app.on_event("shutdown")(shutdown)
     return next_app
 
 

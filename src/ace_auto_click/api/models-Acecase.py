@@ -173,6 +173,7 @@ class ExecutionEvent(BaseModel):
     run_id: int
     sequence_no: int
     ts_ms: int
+    details: dict[str, Any] | None = None
 
 
 class CommandResult(BaseModel):

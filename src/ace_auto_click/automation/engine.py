@@ -56,7 +56,7 @@ class ClickEngine:
         self._execution_lock = threading.Lock()
         self._held_keys: set[Any] = set()
 
-    def emit_execution_event(self, step_id: str, step_type: str, phase: str) -> None:
+    def emit_execution_event(self, step_id: str, step_type: str, phase: str, details: dict[str, Any] | None = None) -> None:
         with self._execution_lock:
             self._execution_seq += 1
             self._execution_events.append({
@@ -66,6 +66,7 @@ class ClickEngine:
                 "run_id": self._execution_run_id,
                 "sequence_no": self._execution_seq,
                 "ts_ms": int(time.time() * 1000),
+                "details": details,
             })
 
     def _begin_execution_run(self) -> int:

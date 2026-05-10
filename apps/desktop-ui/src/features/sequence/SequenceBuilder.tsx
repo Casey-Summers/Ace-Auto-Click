@@ -20,116 +20,13 @@ import { CollapsibleSection } from "../../components/CollapsibleSection";
 import { SplitHotkeyActionButton } from "../../components/SplitHotkeyActionButton";
 import { Badge } from "../../components/ui/badge";
 import { Input } from "../../components/ui/input";
-import { displayKeybind } from "../../lib/keybinds";
 import { stepIcon } from "../../lib/steps";
+import { executionStepStateTone, formatMs, resolveLoops, stepSummary, sumTiming, type RowSummary } from "../../lib/sequence";
 import type { ActionStep, ExecutionEvent, LoopStartStep, Rgb } from "../../lib/types";
-
-type LoopRange = { startIndex: number; endIndex: number; depth: number };
-type Timing = { baseMs: number; randomMs: number };
-type RowSummary = { title: string; subtext: string; pixelComparison?: { current: Rgb | null; expected: Rgb; matches: boolean } };
 type RailSegment = { id: string; y1: number; y2: number };
 type RowGeometry = { top: number; bottom: number };
 type RowItem = { index: number; indentPct: number; collapsedSummary?: RowSummary };
-
-function loopDisplayCount(step: LoopStartStep): number {
-  return Math.max(1, step.loop_count, step.repeats);
-}
-
-function estimateStepTiming(step: ActionStep): Timing {
-  const repeats = Math.max(1, step.repeats);
-  if (step.type === "wait") return { baseMs: (step.ms + step.interval_ms) * repeats, randomMs: (step.random_ms + step.randomness_ms) * repeats };
-  if (step.type === "loop_end") return { baseMs: 0, randomMs: 0 };
-  return { baseMs: step.interval_ms * repeats, randomMs: step.randomness_ms * repeats };
-}
-
-function sumTiming(steps: ActionStep[]): Timing {
-  return steps.reduce((sum, step) => {
-    const timing = estimateStepTiming(step);
-    return { baseMs: sum.baseMs + timing.baseMs, randomMs: sum.randomMs + timing.randomMs };
-  }, { baseMs: 0, randomMs: 0 });
-}
-
-function formatMs(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(ms >= 10000 ? 0 : 1)}s`;
-}
-
-function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selected = false): RowSummary {
-  if (step.type === "click") {
-    const parts: string[] = [];
-    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    if (step.clicks !== 1) parts.push(`clicks ${step.clicks}`);
-    if (step.random_offset > 0) parts.push(`position +- ${step.random_offset}px`);
-    return { title: `Click ${step.button.charAt(0).toUpperCase()}${step.button.slice(1)} at ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
-  }
-  if (step.type === "move") {
-    const parts: string[] = [];
-    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    if (step.random_offset > 0) parts.push(`position +- ${step.random_offset}px`);
-    return { title: `Move to ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
-  }
-  if (step.type === "drag") {
-    const parts: string[] = [];
-    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.speed !== 500) parts.push(`speed ${step.speed}px/s`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    if (step.random_offset > 0) parts.push(`position +- ${step.random_offset}px`);
-    return { title: `Drag ${step.direction} ${step.length_px}px`, subtext: parts.join(" / ") };
-  }
-  if (step.type === "wait") {
-    const parts: string[] = [];
-    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    if (step.random_ms !== 0) parts.push(`wait jitter +- ${formatMs(step.random_ms)}`);
-    return { title: `Wait ${formatMs(step.ms)}${step.random_ms > 0 ? ` +- ${formatMs(step.random_ms)}` : ""}`, subtext: parts.join(" / ") };
-  }
-  if (step.type === "pixel_check") {
-    const matches = selected && selectedPixelLiveRgb ? Math.max(...selectedPixelLiveRgb.map((value, index) => Math.abs(value - step.expected_rgb[index]))) <= step.tolerance : false;
-    const parts: string[] = [];
-    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    if (step.mode !== "wait_until_match") parts.push(step.mode.replace(/_/g, " "));
-    if (step.tolerance !== 10) parts.push(`tol ${step.tolerance}`);
-    return { title: "Pixel Match", subtext: parts.join(" / "), pixelComparison: { current: selected && selectedPixelLiveRgb ? selectedPixelLiveRgb : null, expected: step.expected_rgb, matches } };
-  }
-  if (step.type === "key_tap") {
-    const parts: string[] = [];
-    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    return { title: `Tap ${displayKeybind(step.key)}`, subtext: parts.join(" / ") };
-  }
-  if (step.type === "key_hold") {
-    const parts: string[] = [];
-    if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    return { title: `Hold ${displayKeybind(step.key)} for ${formatMs(step.hold_ms)}`, subtext: parts.join(" / ") };
-  }
-  if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop Start infinite" : `Loop Start x${loopDisplayCount(step)}`, subtext: "" };
-  return { title: "Loop End", subtext: "" };
-}
-
-function resolveLoops(steps: ActionStep[]): Map<string, LoopRange> {
-  const stack: Array<{ loopId: string; index: number; depth: number }> = [];
-  const ranges = new Map<string, LoopRange>();
-  let depth = 0;
-  for (let index = 0; index < steps.length; index += 1) {
-    const step = steps[index];
-    if (step.type === "loop_start") {
-      stack.push({ loopId: step.loop_id, index, depth });
-      depth += 1;
-      continue;
-    }
-    if (step.type === "loop_end") {
-      depth = Math.max(0, depth - 1);
-      const open = stack.pop();
-      if (!open || open.loopId !== step.loop_id) continue;
-      ranges.set(step.loop_id, { startIndex: open.index, endIndex: index, depth: open.depth });
-    }
-  }
-  return ranges;
-}
+type LoopRange = { startIndex: number; endIndex: number; depth: number };
 
 function computeIndentPct(index: number, ranges: Map<string, LoopRange>): number {
   for (const range of ranges.values()) {
@@ -155,7 +52,7 @@ function buildRows(steps: ActionStep[], ranges: Map<string, LoopRange>): RowItem
       const range = ranges.get(step.loop_id);
       if (range) {
         const children = steps.slice(range.startIndex + 1, range.endIndex);
-        collapsedSummary = { title: step.loop_infinite ? `Loop infinite - ${children.length} steps` : `Loop ${loopDisplayCount(step)}x - ${children.length} steps`, subtext: "" };
+        collapsedSummary = { title: step.loop_infinite ? `Loop infinite - ${children.length} steps` : `Loop ${Math.max(1, step.loop_count, step.repeats)}x - ${children.length} steps`, subtext: "" };
       }
     }
     rows.push({ index, indentPct: computeIndentPct(index, ranges), collapsedSummary });
@@ -186,7 +83,7 @@ function moveBlock(steps: ActionStep[], fromIndex: number, toIndex: number, rang
 
 function SortableRow({ row, step, selected, stateTone, flashTone, heldTone, selectedPixelLiveRgb, pixelSamplingAssist, onSelect, onToggleCollapse }: { row: RowItem; step: ActionStep; selected: boolean; stateTone?: "info" | "success" | "warning" | "danger"; flashTone?: "success" | "warning" | null; heldTone?: "danger" | null; selectedPixelLiveRgb?: Rgb | null; pixelSamplingAssist?: boolean; onSelect: () => void; onToggleCollapse: (step: LoopStartStep) => void; }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: step.id });
-  const summary = row.collapsedSummary ?? rowSummary(step, selectedPixelLiveRgb, selected);
+  const summary = row.collapsedSummary ?? stepSummary(step, selectedPixelLiveRgb, selected);
   return (
     <div ref={setNodeRef} data-step-id={step.id} style={{ transform: CSS.Transform.toString(transform), transition, marginLeft: `${row.indentPct}%`, width: `calc(100% - ${row.indentPct}%)` }} className={isDragging ? "opacity-60" : ""}>
       <div className={`relative flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${heldTone === "danger" ? "border-danger/60 bg-danger/10" : selected ? (stateTone === "success" ? "border-success/55 bg-success/10" : stateTone === "warning" ? "border-warning/55 bg-warning/10" : stateTone === "danger" ? "border-danger/55 bg-danger/10" : "border-info/45 bg-info/10") : "border-border bg-background/60 hover:bg-surface-strong"} ${step.enabled ? "" : "opacity-45"} ${pixelSamplingAssist ? "border-warning/75 bg-warning/10 shadow-[0_0_0_1px_hsl(var(--warning)/0.5)]" : ""} ${flashTone === "success" && !heldTone ? "step-fade-success" : ""} ${flashTone === "warning" && !heldTone ? "step-fade-warning" : ""}`} onClick={onSelect}>
@@ -351,7 +248,7 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
       flashTimersRef.current = {};
     }
     const eventRow = listRef.current?.querySelector(`[data-step-id="${lastEvent.step_id}"]`) as HTMLElement | null;
-    eventRow?.scrollIntoView({ block: "start", behavior: "smooth" });
+    eventRow?.scrollIntoView?.({ block: "start", behavior: "smooth" });
     for (const event of executionEvents.filter((item) => item.run_id === visualRunIdRef.current)) {
       if (event.phase === "condition_waiting") {
         if (!running) continue;
@@ -421,7 +318,7 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
                 const step = steps[row.index];
                 const pixelSamplingAssist = Boolean(samplingPixelStepId) && step.type === "click";
                 const executing = executingStepId === step.id;
-                const stateTone = !executing ? "info" : executingStepState === "condition_false" ? "danger" : executingStepState === "waiting" ? "warning" : "success";
+                const stateTone = executionStepStateTone(executing, executingStepState);
                 return <SortableRow key={step.id} row={row} step={step} selected={executing || step.id === selectedId} stateTone={stateTone} flashTone={flashByStepId[step.id] ?? null} heldTone={heldStateByStepId[step.id] ?? null} selectedPixelLiveRgb={selectedPixelLiveRgb} pixelSamplingAssist={pixelSamplingAssist} onSelect={() => { if (pixelSamplingAssist && onSamplePixelFromClickStep) { void onSamplePixelFromClickStep(step.id); return; } onSelect(step.id); }} onToggleCollapse={toggleCollapse} />;
               })}
             </div>

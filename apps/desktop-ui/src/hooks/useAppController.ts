@@ -22,6 +22,18 @@ type CaptureSnapshot = {
   error: string | null;
 };
 
+function formatExecutionEventLog(event: ExecutionEvent): string | null {
+  if (event.phase !== "step_execute") return null;
+  if (event.step_type !== "key_tap" && event.step_type !== "key_hold") return null;
+  const details = event.details;
+  if (!details) return null;
+  const combo = details.configured_combo ?? "unset";
+  const ops = (details.operations ?? []).join(", ");
+  const path = details.dispatch_path ?? "unknown";
+  const typeLabel = event.step_type === "key_tap" ? "Key Tap" : "Key Hold";
+  return `${typeLabel} step ${event.step_id}: parsed ${combo} via ${path}${ops ? ` -> ${ops}` : ""}`;
+}
+
 export function useAppController() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [state, setState] = useState<RuntimeState>(defaultState);
@@ -119,6 +131,10 @@ export function useAppController() {
         if (!events.length) return;
         executionAfter.current = Math.max(executionAfter.current, ...events.map((event) => event.sequence_no));
         setExecutionEvents(events);
+        const lines = events.map(formatExecutionEventLog).filter((line): line is string => Boolean(line));
+        if (lines.length) {
+          setLog((items) => [...lines.reverse(), ...items]);
+        }
       }).catch(() => undefined);
     }, intervalMs);
     return () => window.clearInterval(timer);
@@ -245,25 +261,7 @@ export function useAppController() {
         return;
       }
       const key = snapshot.result.key;
-      setSettings((current) => {
-        const next = {
-          ...current,
-          profiles: current.profiles.map((profile) =>
-            profile.id === current.active_profile_id
-              ? {
-                  ...profile,
-                  steps: profile.steps.map((step) =>
-                    step.id === stepId && (step.type === "key_tap" || step.type === "key_hold")
-                      ? { ...step, key }
-                      : step
-                  )
-                }
-              : profile
-          )
-        };
-        settingsRef.current = next;
-        return next;
-      });
+      updateStepById(stepId, (step) => (step.type === "key_tap" || step.type === "key_hold") ? { ...step, key } : step);
       setLog((items) => [`Captured keybind ${displayKeybind(key)}.`, ...items]);
     } finally {
       setPickingKeyStepId("");
@@ -313,12 +311,13 @@ export function useAppController() {
     });
   };
 
-  const patchProfile = (patch: Partial<AutomationProfile>) => {
+  const updateActiveProfile = (updater: (profile: AutomationProfile) => AutomationProfile) => {
     setSettings((current) => {
+      const activeId = current.active_profile_id;
       const next = {
         ...current,
         profiles: current.profiles.map((profile) =>
-          profile.id === activeProfile.id ? { ...profile, ...patch } : profile
+          profile.id === activeId ? updater(profile) : profile
         )
       };
       settingsRef.current = next;
@@ -326,7 +325,16 @@ export function useAppController() {
     });
   };
 
+  const patchProfile = (patch: Partial<AutomationProfile>) => updateActiveProfile((profile) => ({ ...profile, ...patch }));
+
   const patchSteps = (steps: ActionStep[]) => patchProfile({ steps });
+
+  const updateStepById = (stepId: string, updater: (step: ActionStep) => ActionStep) => {
+    updateActiveProfile((profile) => ({
+      ...profile,
+      steps: profile.steps.map((step) => (step.id === stepId ? updater(step) : step))
+    }));
+  };
 
   const findLoopRange = (steps: ActionStep[], startIndex: number) => {
     const start = steps[startIndex];
@@ -349,23 +357,15 @@ export function useAppController() {
       const startIndex = activeProfile.steps.findIndex((step) => step.id === selectedStep.id);
       const range = findLoopRange(activeProfile.steps, startIndex);
       if (range) {
-        patchSteps(
-          activeProfile.steps.map((step, index) =>
-            index >= range.startIndex && index <= range.endIndex
-              ? step.type === "loop_start"
-                ? ({ ...step, enabled: patch.enabled, collapsed: !patch.enabled ? true : step.collapsed } as ActionStep)
-                : ({ ...step, enabled: patch.enabled } as ActionStep)
-              : step
-          )
-        );
+        patchSteps(activeProfile.steps.map((step, index) => index >= range.startIndex && index <= range.endIndex
+          ? step.type === "loop_start"
+            ? ({ ...step, enabled: patch.enabled, collapsed: !patch.enabled ? true : step.collapsed } as ActionStep)
+            : ({ ...step, enabled: patch.enabled } as ActionStep)
+          : step));
         return;
       }
     }
-    patchSteps(
-      activeProfile.steps.map((step) =>
-        step.id === selectedStep?.id ? ({ ...step, ...patch } as ActionStep) : step
-      )
-    );
+    updateStepById(selectedStep.id, (step) => ({ ...step, ...patch } as ActionStep));
   };
 
   const addStep = (type: ActionStep["type"]) => {
@@ -442,41 +442,14 @@ export function useAppController() {
     setLog((items) => ["Emergency stop triggered.", ...items]);
   };
 
-  const sequenceForRun = async (): Promise<ActionStep[]> => {
-    const latestSettings = settingsRef.current;
-    const latestProfile = latestSettings.profiles.find((profile) => profile.id === latestSettings.active_profile_id) ?? activeProfile;
-    if (latestSettings.mode === "advanced") {
-      return latestProfile.steps;
-    }
-    const normal = latestProfile.normal;
-    const position = normal.use_current_mouse ? await api.mousePosition() : { x: 0, y: 0 };
-    return [
-      {
-        id: "normal-click",
-        type: "click",
-        enabled: true,
-        repeats: 1,
-        interval_ms: normal.interval_ms,
-        randomness_ms: normal.interval_random_ms,
-        x: position.x,
-        y: position.y,
-        button: normal.button,
-        clicks: normal.double_click ? 2 : normal.clicks_per_cycle,
-        random_offset: normal.position_random_px
-      }
-    ];
-  };
-
   const runToggle = async () => {
     if (state.running) {
       await emergencyStop();
       return;
     }
-    const latestSettings = settingsRef.current;
-    const latestProfile = latestSettings.profiles.find((profile) => profile.id === latestSettings.active_profile_id) ?? activeProfile;
-    const result = await api.runSequence(await sequenceForRun(), latestProfile.loops_count, latestProfile.loops_infinite);
+    const result = await api.runToggle();
     setState(result.state);
-    setLog((items) => [`Running ${latestProfile.name}.`, ...items]);
+    setLog((items) => [`Running ${settingsRef.current.profiles.find((profile) => profile.id === settingsRef.current.active_profile_id)?.name ?? activeProfile.name}.`, ...items]);
   };
 
   const openEmergencySettings = () => {
@@ -516,25 +489,7 @@ export function useAppController() {
         return;
       }
       const sample = await api.pixel(position.x, position.y);
-      setSettings((current) => {
-        const next = {
-          ...current,
-          profiles: current.profiles.map((profile) =>
-            profile.id === current.active_profile_id
-              ? {
-                  ...profile,
-                  steps: profile.steps.map((step) =>
-                    step.id === stepId && step.type === "pixel_check"
-                      ? { ...step, x: position.x, y: position.y, expected_rgb: sample.rgb }
-                      : step
-                  )
-                }
-              : profile
-          )
-        };
-        settingsRef.current = next;
-        return next;
-      });
+      updateStepById(stepId, (step) => step.type === "pixel_check" ? { ...step, x: position.x, y: position.y, expected_rgb: sample.rgb } : step);
       setLog((items) => [`Sampled pixel ${sample.rgb.join(", ")} at ${position.x}, ${position.y}.`, ...items]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -590,25 +545,7 @@ export function useAppController() {
       const sourceY = clickStep.y;
       const sample = await api.pixel(sourceX, sourceY);
       const targetPixelStepId = samplingPixelStepId;
-      setSettings((current) => {
-        const next = {
-          ...current,
-          profiles: current.profiles.map((profile) =>
-            profile.id === current.active_profile_id
-              ? {
-                  ...profile,
-                  steps: profile.steps.map((step) =>
-                    step.id === targetPixelStepId && step.type === "pixel_check"
-                      ? { ...step, x: sourceX, y: sourceY, expected_rgb: sample.rgb }
-                      : step
-                  )
-                }
-              : profile
-          )
-        };
-        settingsRef.current = next;
-        return next;
-      });
+      updateStepById(targetPixelStepId, (step) => step.type === "pixel_check" ? { ...step, x: sourceX, y: sourceY, expected_rgb: sample.rgb } : step);
       setSamplingPixelStepId("");
       setLog((items) => [`Copied click coordinates ${sourceX}, ${sourceY} and sampled ${sample.rgb.join(", ")}.`, ...items]);
     } catch (error) {
@@ -636,25 +573,7 @@ export function useAppController() {
         setLog((items) => ["Position picker failed: capture completed without coordinates.", ...items]);
         return;
       }
-      setSettings((current) => {
-        const next = {
-          ...current,
-          profiles: current.profiles.map((profile) =>
-            profile.id === current.active_profile_id
-              ? {
-                  ...profile,
-                  steps: profile.steps.map((step) =>
-                    step.id === stepId && (step.type === "click" || step.type === "move" || step.type === "drag")
-                      ? { ...step, x: position.x, y: position.y }
-                      : step
-                  )
-                }
-              : profile
-          )
-        };
-        settingsRef.current = next;
-        return next;
-      });
+      updateStepById(stepId, (step) => (step.type === "click" || step.type === "move" || step.type === "drag") ? { ...step, x: position.x, y: position.y } : step);
       setLog((items) => [`Picked position ${position.x}, ${position.y}.`, ...items]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

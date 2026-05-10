@@ -15,6 +15,14 @@ export type ExecutionEvent = {
   run_id: number;
   sequence_no: number;
   ts_ms: number;
+  details?: {
+    configured_combo?: string;
+    parsed_modifiers?: string[];
+    parsed_base?: string;
+    dispatch_path?: "keyboard_tap" | "keyboard_hold" | "mouse_side_button" | string;
+    hold_ms?: number;
+    operations?: string[];
+  } | null;
 };
 
 export type Point = {
