@@ -339,21 +339,23 @@ class KeyTapStep(ActionStep):
                 base = part
         return mods, base
 
-    def _run(self, engine: Any) -> bool:
-        mouse_button = self._mouse_button(engine)
-        if mouse_button is not None:
-            engine._mouse_ctl.click(mouse_button)
-            return True
-
-        mods, base = self._parse_combo()
+    def _run_with_mods(self, engine: Any, mods: list[keyboard.Key], action: Any) -> bool:
         for mod in mods:
             engine._kb_ctl.press(mod)
         try:
-            engine._kb_ctl.tap(base)
+            action()
+            return True
         finally:
             for mod in reversed(mods):
                 engine._kb_ctl.release(mod)
-        return True
+
+    def _run(self, engine: Any) -> bool:
+        mods, base = self._parse_combo()
+        mouse_button = self._mouse_button(engine)
+        if mouse_button is not None:
+            return self._run_with_mods(engine, mods, lambda: engine._mouse_ctl.click(mouse_button))
+
+        return self._run_with_mods(engine, mods, lambda: engine._kb_ctl.tap(base))
 
 
 @dataclass
@@ -389,11 +391,15 @@ class KeyHoldStep(ActionStep):
         return mods, base
 
     def _run(self, engine: Any) -> bool:
+        mods, resolved = self._parse_combo()
         mouse_button = self._mouse_button(engine)
+        delay_s = max(0, int(self.hold_ms)) / 1000.0
+
         if mouse_button is not None:
-            engine._mouse_ctl.press(mouse_button)
+            for mod in mods:
+                engine._kb_ctl.press(mod)
             try:
-                delay_s = max(0, int(self.hold_ms)) / 1000.0
+                engine._mouse_ctl.press(mouse_button)
                 start = time.perf_counter()
                 while time.perf_counter() - start < delay_s:
                     if engine._stop_evt.is_set():
@@ -402,8 +408,9 @@ class KeyHoldStep(ActionStep):
                 return True
             finally:
                 engine._mouse_ctl.release(mouse_button)
+                for mod in reversed(mods):
+                    engine._kb_ctl.release(mod)
 
-        mods, resolved = self._parse_combo()
         for mod in mods:
             engine._kb_ctl.press(mod)
         engine._kb_ctl.press(resolved)
@@ -412,7 +419,6 @@ class KeyHoldStep(ActionStep):
             for mod in mods:
                 engine._register_held_key(mod)
         try:
-            delay_s = max(0, int(self.hold_ms)) / 1000.0
             start = time.perf_counter()
             while time.perf_counter() - start < delay_s:
                 if engine._stop_evt.is_set():
