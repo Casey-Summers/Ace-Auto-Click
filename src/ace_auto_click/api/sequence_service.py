@@ -116,7 +116,7 @@ def compile_sequence_timeline(steps: list[ActionStepModel]) -> list[SequenceTime
                     end_index += 1
                 if depth != 0:
                     raise HTTPException(status_code=400, detail=f"Unmatched loop_start for {step.loop_id}")
-                if not step.enabled:
+                if step.enabled is not True:
                     index = end_index
                     continue
                 body = items[index + 1 : end_index - 1]
@@ -125,13 +125,13 @@ def compile_sequence_timeline(steps: list[ActionStepModel]) -> list[SequenceTime
                 for iteration in range(iterations):
                     timeline.append(SequenceTimelineNode(step.id, step.type, "loop_enter"))
                     append_range(body)
-                    if isinstance(end_step, LoopEndStepModel) and end_step.enabled:
+                    if isinstance(end_step, LoopEndStepModel) and end_step.enabled is True:
                         timeline.append(SequenceTimelineNode(end_step.id, end_step.type, "loop_repeat" if iteration < iterations - 1 else "loop_exit"))
                 index = end_index
                 continue
             if isinstance(step, LoopEndStepModel):
                 raise HTTPException(status_code=400, detail=f"Unmatched loop_end for {step.loop_id}")
-            if step.enabled:
+            if step.enabled is True:
                 timeline.append(SequenceTimelineNode(step.id, step.type, "execute", to_action_step(step)))
             index += 1
 

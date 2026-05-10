@@ -54,7 +54,7 @@ export function NormalRunPanel({
             <div className="font-mono">{normal.button}</div>
           </div>
           <div className="rounded-lg bg-surface-strong p-3">
-            <div className="text-xs text-muted-foreground">Interval</div>
+            <div className="text-xs text-muted-foreground">Pre-delay</div>
             <div className="font-mono">{normal.interval_ms}ms</div>
           </div>
           <div className="rounded-lg bg-surface-strong p-3">

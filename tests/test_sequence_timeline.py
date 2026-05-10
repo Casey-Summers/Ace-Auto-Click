@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -14,6 +15,7 @@ from ace_auto_click.api.models import (
     WaitStepModel,
 )
 from ace_auto_click.api.sequence_service import compile_sequence_timeline
+from ace_auto_click.automation.engine import ClickEngine
 from ace_auto_click.automation.actions import ActionStep, DragStep, KeyHoldStep, KeyTapStep, MoveStep, WaitStep
 
 
@@ -122,6 +124,15 @@ def test_compile_sequence_timeline_skips_disabled_loop_block() -> None:
     ]
 
 
+def test_compile_sequence_timeline_skips_disabled_non_loop_actions() -> None:
+    assert timeline_signature([
+        ClickStepModel(id="click-off", enabled=False),
+        WaitStepModel(id="wait-on", enabled=True),
+    ]) == [
+        ("wait-on", "execute"),
+    ]
+
+
 @dataclass
 class RecordingStep(ActionStep):
     calls: list[str] = field(default_factory=list)
@@ -136,19 +147,124 @@ class RecordingEngine:
         self._stop_evt = threading.Event()
         self.events: list[tuple[str, str]] = []
         self.current_step_state: str | None = None
+        self.status_messages: list[str] = []
+        self.side_buttons_supported = True
 
     def emit_execution_event(self, step_id: str, step_type: str, phase: str) -> None:
         self.events.append((step_id, phase))
 
+    def _on_status(self, message: str) -> None:
+        self.status_messages.append(message)
 
-def test_action_completion_event_is_emitted_after_run_finishes() -> None:
+
+def test_action_execution_event_is_emitted_before_run_finishes() -> None:
     engine = RecordingEngine()
     step = RecordingStep(id="step-1", type="custom", interval_ms=0)
 
     assert step.execute(engine) is True
 
     assert step.calls == ["run"]
-    assert engine.events == [("step-1", "step_complete")]
+    assert engine.events == [("step-1", "step_execute"), ("step-1", "step_complete")]
+
+
+def test_action_delay_occurs_before_run() -> None:
+    engine = RecordingEngine()
+    step = RecordingStep(id="step-1", type="custom", interval_ms=50)
+    started_at: list[float] = []
+    states: list[str | None] = []
+
+    def record_run(self: RecordingStep, engine: Any) -> bool:
+        started_at.append(time.perf_counter())
+        states.append(engine.current_step_state)
+        self.calls.append("run")
+        return True
+
+    step._run = record_run.__get__(step, RecordingStep)  # type: ignore[method-assign]
+    before = time.perf_counter()
+
+    assert step.execute(engine) is True
+
+    assert step.calls == ["run"]
+    assert started_at and (started_at[0] - before) >= 0.045
+    assert states == ["running"]
+    assert engine.events[0] == ("step-1", "step_execute")
+
+
+def test_click_step_runs_after_pre_delay() -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    step = ClickStep(id="click-1", type="click", x=10, y=20, interval_ms=50)
+    click_times: list[float] = []
+
+    def record_click(self: RecordingMouse, button: Any) -> None:
+        click_times.append(time.perf_counter())
+        self.clicks.append(button)
+
+    mouse.click = record_click.__get__(mouse, RecordingMouse)  # type: ignore[method-assign]
+    before = time.perf_counter()
+
+    assert step.execute(engine) is True
+
+    assert mouse.clicks
+    assert click_times and (click_times[0] - before) >= 0.045
+    assert engine.current_step_state == "running"
+
+
+def test_key_tap_step_runs_after_pre_delay() -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    keyboard_ctl = RecordingKeyboard()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    engine._kb_ctl = keyboard_ctl  # type: ignore[attr-defined]
+    step = KeyTapStep(id="key-1", type="key_tap", key="space", interval_ms=50)
+    tap_times: list[float] = []
+
+    def record_tap(self: RecordingKeyboard, key: Any) -> None:
+        tap_times.append(time.perf_counter())
+        self.presses.append(key)
+        self.releases.append(key)
+
+    keyboard_ctl.tap = record_tap.__get__(keyboard_ctl, RecordingKeyboard)  # type: ignore[method-assign]
+    before = time.perf_counter()
+
+    assert step.execute(engine) is True
+
+    assert keyboard_ctl.presses
+    assert tap_times and (tap_times[0] - before) >= 0.045
+    assert engine.current_step_state == "running"
+
+
+def test_step_stays_waiting_until_pre_delay_finishes() -> None:
+    engine = RecordingEngine()
+    step = RecordingStep(id="step-1", type="custom", interval_ms=50)
+    observed_states: list[str | None] = []
+
+    original_sleep = step._sleep_with_stop
+
+    def wrapped_sleep(engine: Any, delay_s: float, chunk_s: float = 0.01) -> bool:
+        observed_states.append(engine.current_step_state)
+        return original_sleep(engine, delay_s, chunk_s)
+
+    step._sleep_with_stop = wrapped_sleep  # type: ignore[method-assign]
+
+    assert step.execute(engine) is True
+
+    assert observed_states and observed_states[0] == "waiting"
+    assert engine.events[0] == ("step-1", "step_execute")
+
+
+def test_pre_action_delay_can_be_interrupted() -> None:
+    engine = RecordingEngine()
+    step = RecordingStep(id="step-1", type="custom", interval_ms=1000)
+    timer = threading.Timer(0.05, engine._stop_evt.set)
+    timer.start()
+    try:
+        assert step.execute(engine) is False
+    finally:
+        timer.cancel()
+
+    assert step.calls == []
 
 
 def test_wait_completion_event_is_emitted_after_wait_logic() -> None:
@@ -158,7 +274,7 @@ def test_wait_completion_event_is_emitted_after_wait_logic() -> None:
     assert step.execute(engine) is True
 
     assert engine.current_step_state == "waiting"
-    assert engine.events == [("wait-1", "step_complete")]
+    assert engine.events == [("wait-1", "step_execute"), ("wait-1", "step_complete")]
 
 
 def test_disabled_action_does_not_emit_completion_event() -> None:
@@ -169,6 +285,21 @@ def test_disabled_action_does_not_emit_completion_event() -> None:
 
     assert step.calls == []
     assert engine.events == []
+
+
+def test_start_sequence_skips_disabled_steps_before_execution() -> None:
+    status_messages: list[str] = []
+    engine = ClickEngine(on_status=status_messages.append)
+    step = RecordingStep(id="step-1", type="custom", enabled=False, interval_ms=0)
+
+    engine.start_sequence([step], loops=1)
+    deadline = time.time() + 5
+    while engine.is_running() and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert engine.is_running() is False
+    assert step.calls == []
+    assert engine.get_execution_events() == []
 
 
 class RecordingMouse:
@@ -287,7 +418,7 @@ def test_key_tap_step_clicks_side_mouse_button() -> None:
     step = KeyTapStep(id="tap-mouse-4", type="key_tap", key="btnm4", interval_ms=0)
 
     assert step.execute(engine) is True
-    assert mouse.clicks == [step._mouse_button()]
+    assert mouse.clicks == [getattr(mouse.Button, "x1", None)]
 
 
 def test_key_hold_step_holds_side_mouse_button() -> None:
@@ -297,5 +428,36 @@ def test_key_hold_step_holds_side_mouse_button() -> None:
     step = KeyHoldStep(id="hold-mouse-5", type="key_hold", key="btnm5", hold_ms=1, interval_ms=0)
 
     assert step.execute(engine) is True
-    assert mouse.presses == [step._mouse_button()]
-    assert mouse.releases == [step._mouse_button()]
+    assert mouse.presses == [getattr(mouse.Button, "x2", None)]
+    assert mouse.releases == [getattr(mouse.Button, "x2", None)]
+
+
+def test_key_tap_step_fails_without_side_button_support() -> None:
+    engine = RecordingEngine()
+    engine.side_buttons_supported = False
+    mouse = RecordingMouse()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    step = KeyTapStep(id="tap-mouse-4", type="key_tap", key="btnm4", interval_ms=0)
+
+    assert step.execute(engine) is False
+    assert mouse.clicks == []
+    assert engine.events == []
+    assert any("failed" in message.lower() for message in engine.status_messages)
+
+
+def test_duplicate_key_tap_steps_both_dispatch() -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    first = KeyTapStep(id="tap-1", type="key_tap", key="btnm4", interval_ms=0)
+    duplicate = KeyTapStep(id="tap-1-copy", type="key_tap", key="btnm4", interval_ms=0)
+
+    assert first.execute(engine) is True
+    assert duplicate.execute(engine) is True
+    assert len(mouse.clicks) == 2
+    assert engine.events == [
+        ("tap-1", "step_execute"),
+        ("tap-1", "step_complete"),
+        ("tap-1-copy", "step_execute"),
+        ("tap-1-copy", "step_complete"),
+    ]

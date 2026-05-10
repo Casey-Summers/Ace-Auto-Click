@@ -1,4 +1,4 @@
-import { MousePointerClick, RadioTower, Square } from "lucide-react";
+import { RadioTower, Square } from "lucide-react";
 
 import { CollapsibleSection } from "../../components/CollapsibleSection";
 import { Keycap } from "../../components/keycap";
@@ -24,7 +24,6 @@ export function NormalRunPanel({
   return (
     <CollapsibleSection
       title="Normal Mode"
-      icon={<MousePointerClick size={16} />}
       actions={
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -52,7 +51,7 @@ export function NormalRunPanel({
             <div className="font-mono">{normal.button}</div>
           </div>
           <div className="rounded-lg bg-surface-strong p-3">
-            <div className="text-xs text-muted-foreground">Interval</div>
+            <div className="text-xs text-muted-foreground">Pre-delay</div>
             <div className="font-mono">{normal.interval_ms}ms</div>
           </div>
           <div className="rounded-lg bg-surface-strong p-3">

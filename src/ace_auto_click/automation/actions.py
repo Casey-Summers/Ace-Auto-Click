@@ -17,8 +17,22 @@ class ActionStep:
     type: str  # "click", "move", "wait", "pixel_check", "key_tap"
     enabled: bool = True
     repeats: int = 1
-    interval_ms: int = 100  # post-step delay
+    interval_ms: int = 100  # pre-step delay
     randomness_ms: int = 0  # randomness for interval
+
+    def _compute_delay_s(self) -> float:
+        delay_s = max(0, int(self.interval_ms)) / 1000.0
+        if self.randomness_ms > 0:
+            delay_s += random.uniform(0, max(0, int(self.randomness_ms)) / 1000.0)
+        return max(0.0, delay_s)
+
+    def _sleep_with_stop(self, engine: Any, delay_s: float, chunk_s: float = 0.01) -> bool:
+        start = time.perf_counter()
+        while time.perf_counter() - start < delay_s:
+            if engine._stop_evt.is_set():
+                return False
+            time.sleep(chunk_s)
+        return True
 
     def execute(self, engine: Any) -> bool:
         """Executes the step. Returns True if execution should continue, False to stop sequence."""
@@ -29,20 +43,21 @@ class ActionStep:
             if engine._stop_evt.is_set():
                 return False
 
-            if not self._run(engine):
+            if hasattr(engine, "current_step_state"):
+                engine.current_step_state = "waiting"
+            if not self._sleep_with_stop(engine, self._compute_delay_s()):
                 return False
 
-            # Post-action delay
-            delay_s = self.interval_ms / 1000.0
-            if self.randomness_ms > 0:
-                delay_s += random.uniform(0, self.randomness_ms / 1000.0)
-
-            if delay_s > 0:
-                start = time.perf_counter()
-                while time.perf_counter() - start < delay_s:
-                    if engine._stop_evt.is_set():
-                        return False
-                    time.sleep(0.01)
+            try:
+                if hasattr(engine, "current_step_state"):
+                    engine.current_step_state = "running"
+                if hasattr(engine, "emit_execution_event"):
+                    engine.emit_execution_event(self.id, self.type, "step_execute")
+                if not self._run(engine):
+                    return False
+            except Exception as exc:
+                self._report_dispatch_failure(engine, str(exc))
+                return False
 
             if hasattr(engine, "emit_execution_event"):
                 engine.emit_execution_event(self.id, self.type, "step_complete")
@@ -51,6 +66,10 @@ class ActionStep:
 
     def _run(self, engine: Any) -> bool:
         raise NotImplementedError
+
+    def _report_dispatch_failure(self, engine: Any, message: str) -> None:
+        if hasattr(engine, "_on_status"):
+            engine._on_status(f"Step {self.id} ({self.type}) failed: {message}")
 
 
 @dataclass
@@ -161,14 +180,6 @@ class DragStep(PointerTargetStep):
             for btn in reversed(held_buttons):
                 engine._mouse_ctl.release(btn)
 
-    def _sleep_with_stop(self, engine: Any, delay_s: float) -> bool:
-        start = time.perf_counter()
-        while time.perf_counter() - start < delay_s:
-            if engine._stop_evt.is_set():
-                return False
-            time.sleep(0.005)
-        return True
-
     def _run_with_sendinput(self, engine: Any, start_x: int, start_y: int, end_x: float, end_y: float, held_buttons: list[mouse.Button], duration_s: float, step_count: int, acceleration: float) -> bool:
         if "Windows" not in __import__("platform").system():
             return False
@@ -213,8 +224,8 @@ class DragStep(PointerTargetStep):
                     continue
                 send(down_flags[0])
                 pressed.append(btn)
-            if not self._sleep_with_stop(engine, max(0, self.hold_delay_ms) / 1000.0):
-                return False
+                if not self._sleep_with_stop(engine, max(0, self.hold_delay_ms) / 1000.0):
+                    return False
             start_time = time.perf_counter()
             for index in range(1, step_count + 1):
                 if engine._stop_evt.is_set():
@@ -246,16 +257,9 @@ class WaitStep(ActionStep):
 
     def _run(self, engine: Any) -> bool:
         engine.current_step_state = "waiting"
-        delay_s = self.ms / 1000.0
-        if self.random_ms > 0:
-            delay_s += random.uniform(0, self.random_ms / 1000.0)
-
         # Sleep in small chunks to allow interruption
-        start = time.perf_counter()
-        while time.perf_counter() - start < delay_s:
-            if hasattr(engine, "_stop_evt") and engine._stop_evt.is_set():
-                return False
-            time.sleep(0.01)
+        if not self._sleep_with_stop(engine, max(0, int(self.ms)) / 1000.0 + (random.uniform(0, max(0, int(self.random_ms)) / 1000.0) if self.random_ms > 0 else 0.0)):
+            return False
         return True
 
 
@@ -284,7 +288,8 @@ class PixelCheckStep(ActionStep):
                 if not waiting_emitted and hasattr(engine, "emit_execution_event"):
                     engine.emit_execution_event(self.id, self.type, "condition_waiting")
                     waiting_emitted = True
-                time.sleep(0.1)
+                if not self._sleep_with_stop(engine, 0.1, 0.1):
+                    return False
             return False
 
         current = get_pixel_rgb(self.x, self.y)
@@ -307,12 +312,18 @@ class PixelCheckStep(ActionStep):
 class KeyTapStep(ActionStep):
     key: str = "space"
 
-    def _mouse_button(self) -> Any | None:
+    def _mouse_button(self, engine: Any) -> Any | None:
         normalized = (self.key or "").strip().lower().replace(" ", "")
         button_attr = {"btnm4": "x1", "mouse4": "x1", "button.x1": "x1", "btnm5": "x2", "mouse5": "x2", "button.x2": "x2"}.get(normalized)
         if not button_attr:
             return None
-        return getattr(mouse.Button, button_attr, f"Button.{button_attr}")
+        side_buttons_supported = bool(getattr(engine, "side_buttons_supported", hasattr(mouse.Button, "x1") and hasattr(mouse.Button, "x2")))
+        if not side_buttons_supported:
+            raise RuntimeError("Side mouse buttons are not supported on this runtime.")
+        button = getattr(mouse.Button, button_attr, None)
+        if button is None:
+            raise RuntimeError(f"Mouse button mapping '{button_attr}' is unavailable.")
+        return button
 
     def _parse_combo(self) -> tuple[list[keyboard.Key], str | keyboard.Key]:
         parts = [part.strip().lower() for part in (self.key or "").split("+") if part.strip()]
@@ -329,7 +340,7 @@ class KeyTapStep(ActionStep):
         return mods, base
 
     def _run(self, engine: Any) -> bool:
-        mouse_button = self._mouse_button()
+        mouse_button = self._mouse_button(engine)
         if mouse_button is not None:
             engine._mouse_ctl.click(mouse_button)
             return True
@@ -350,12 +361,18 @@ class KeyHoldStep(ActionStep):
     key: str = "space"
     hold_ms: int = 300
 
-    def _mouse_button(self) -> Any | None:
+    def _mouse_button(self, engine: Any) -> Any | None:
         normalized = (self.key or "").strip().lower().replace(" ", "")
         button_attr = {"btnm4": "x1", "mouse4": "x1", "button.x1": "x1", "btnm5": "x2", "mouse5": "x2", "button.x2": "x2"}.get(normalized)
         if not button_attr:
             return None
-        return getattr(mouse.Button, button_attr, f"Button.{button_attr}")
+        side_buttons_supported = bool(getattr(engine, "side_buttons_supported", hasattr(mouse.Button, "x1") and hasattr(mouse.Button, "x2")))
+        if not side_buttons_supported:
+            raise RuntimeError("Side mouse buttons are not supported on this runtime.")
+        button = getattr(mouse.Button, button_attr, None)
+        if button is None:
+            raise RuntimeError(f"Mouse button mapping '{button_attr}' is unavailable.")
+        return button
 
     def _parse_combo(self) -> tuple[list[keyboard.Key], str | keyboard.Key]:
         parts = [part.strip().lower() for part in (self.key or "").split("+") if part.strip()]
@@ -372,7 +389,7 @@ class KeyHoldStep(ActionStep):
         return mods, base
 
     def _run(self, engine: Any) -> bool:
-        mouse_button = self._mouse_button()
+        mouse_button = self._mouse_button(engine)
         if mouse_button is not None:
             engine._mouse_ctl.press(mouse_button)
             try:

@@ -58,7 +58,7 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
   if (step.type === "click") {
     const parts: string[] = [];
     if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
     if (step.clicks !== 1) parts.push(`clicks ${step.clicks}`);
     if (step.random_offset > 0) parts.push(`position +- ${step.random_offset}px`);
     return { title: `Click ${step.button.charAt(0).toUpperCase()}${step.button.slice(1)} at ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
@@ -66,7 +66,7 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
   if (step.type === "move") {
     const parts: string[] = [];
     if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
     if (step.random_offset > 0) parts.push(`position +- ${step.random_offset}px`);
     return { title: `Move to ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
   }
@@ -74,14 +74,14 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
     const parts: string[] = [];
     if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
     if (step.speed !== 500) parts.push(`speed ${step.speed}px/s`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
     if (step.random_offset > 0) parts.push(`position +- ${step.random_offset}px`);
     return { title: `Drag ${step.direction} ${step.length_px}px`, subtext: parts.join(" / ") };
   }
   if (step.type === "wait") {
     const parts: string[] = [];
     if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
     if (step.random_ms !== 0) parts.push(`wait jitter +- ${formatMs(step.random_ms)}`);
     return { title: `Wait ${formatMs(step.ms)}${step.random_ms > 0 ? ` +- ${formatMs(step.random_ms)}` : ""}`, subtext: parts.join(" / ") };
   }
@@ -89,7 +89,7 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
     const matches = selected && selectedPixelLiveRgb ? Math.max(...selectedPixelLiveRgb.map((value, index) => Math.abs(value - step.expected_rgb[index]))) <= step.tolerance : false;
     const parts: string[] = [];
     if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
     if (step.mode !== "wait_until_match") parts.push(step.mode.replace(/_/g, " "));
     if (step.tolerance !== 10) parts.push(`tol ${step.tolerance}`);
     return { title: "Pixel Match", subtext: parts.join(" / "), pixelComparison: { current: selected && selectedPixelLiveRgb ? selectedPixelLiveRgb : null, expected: step.expected_rgb, matches } };
@@ -97,13 +97,13 @@ function rowSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null, selecte
   if (step.type === "key_tap") {
     const parts: string[] = [];
     if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
     return { title: `Tap ${displayKeybind(step.key)}`, subtext: parts.join(" / ") };
   }
   if (step.type === "key_hold") {
     const parts: string[] = [];
     if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
-    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
+    if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
     return { title: `Hold ${displayKeybind(step.key)} for ${formatMs(step.hold_ms)}`, subtext: parts.join(" / ") };
   }
   if (step.type === "loop_start") return { title: step.loop_infinite ? "Loop Start infinite" : `Loop Start x${loopDisplayCount(step)}`, subtext: "" };
@@ -397,7 +397,6 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
       className="sequence-builder-shell flex h-full min-h-0 flex-col"
       contentClassName="min-h-0 flex-1"
       title="Sequence Builder"
-      icon={<RadioTower size={16} />}
       actions={<div className="flex items-center gap-2"><SplitHotkeyActionButton tone={running ? "danger" : "success"} icon={running ? <Square size={16} /> : <RadioTower size={16} />} label={running ? "Stop sequence" : "Run sequence"} hotkey={runHotkey} onAction={onRunToggle} onHotkey={running ? onRunToggle : onRunHotkeyClick} /></div>}
     >
       <div className="mb-2 grid grid-cols-3 items-center gap-2 rounded-md bg-background/40 px-3 py-1.5 text-xs text-muted-foreground">

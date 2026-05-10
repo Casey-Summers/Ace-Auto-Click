@@ -6,7 +6,7 @@ import type { ActionStep } from "../../lib/types";
 
 export function ActionLibrary({ onAdd }: { onAdd: (type: ActionStep["type"]) => void }) {
   return (
-    <CollapsibleSection title="Action Library" icon={<MousePointerClick size={16} />}>
+    <CollapsibleSection title="Action Library">
       <div className="grid gap-2">
         <Button variant="default" className="justify-start" onClick={() => onAdd("click")}>
           <MousePointerClick size={16} /> Click

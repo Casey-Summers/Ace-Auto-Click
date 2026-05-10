@@ -47,6 +47,7 @@ class ClickEngine:
 
         self._mouse_ctl = mouse.Controller()
         self._kb_ctl = keyboard.Controller()
+        self.side_buttons_supported = hasattr(mouse.Button, "x1") and hasattr(mouse.Button, "x2")
         self.current_step_id: str | None = None
         self.current_step_state: str | None = None
         self._execution_events: deque[dict[str, Any]] = deque(maxlen=512)
@@ -115,6 +116,21 @@ class ClickEngine:
                         time.sleep(0.05)
                         continue
 
+                    base_sleep = max(0.0, int(settings.interval_ms)) / 1000.0
+                    if settings.interval_rnd_ms > 0:
+                        base_sleep += random.uniform(
+                            0, settings.interval_rnd_ms / 1000.0
+                        )
+
+                    # Sleep in small bursts to allow fast stopping before the action fires.
+                    burst_start = time.perf_counter()
+                    while time.perf_counter() - burst_start < base_sleep:
+                        if self._stop_evt.is_set():
+                            break
+                        time.sleep(0.01)
+                    if self._stop_evt.is_set():
+                        break
+
                     if settings.key_to_tap:
                         self._kb_ctl.tap(settings.key_to_tap)
                     else:
@@ -133,19 +149,6 @@ class ClickEngine:
 
                         self._mouse_ctl.position = (x, y)
                         self._mouse_ctl.click(btn)
-
-                    base_sleep = max(0.0, int(settings.interval_ms)) / 1000.0
-                    if settings.interval_rnd_ms > 0:
-                        base_sleep += random.uniform(
-                            0, settings.interval_rnd_ms / 1000.0
-                        )
-
-                    # Sleep in small bursts to allow fast stopping
-                    burst_start = time.perf_counter()
-                    while time.perf_counter() - burst_start < base_sleep:
-                        if self._stop_evt.is_set():
-                            break
-                        time.sleep(0.01)
 
             except Exception as e:
                 self._on_status(f"Error: {e}")
@@ -175,7 +178,8 @@ class ClickEngine:
                         if self._stop_evt.is_set():
                             break
                         self.current_step_id = step.id
-                        self.current_step_state = "running"
+                        if step.enabled is not True:
+                            continue
                         cont = step.execute(self)
                         if not cont:
                             # Step logic requested stop
@@ -216,11 +220,11 @@ class ClickEngine:
                         if self._stop_evt.is_set():
                             break
                         self.current_step_id = node.row_step_id
-                        self.current_step_state = "waiting" if node.phase_kind == "step_wait" else "running"
                         if node.phase_kind != "execute":
+                            self.current_step_state = "waiting" if node.phase_kind == "step_wait" else None
                             self.emit_execution_event(node.row_step_id, node.step_type, node.phase_kind)
                             continue
-                        if node.action is None or not node.action.enabled:
+                        if node.action is None or node.action.enabled is not True:
                             continue
                         cont = node.action.execute(self)
                         if not cont:
