@@ -52,6 +52,11 @@ class MoveStepModel(BaseStep):
     x: int = 0
     y: int = 0
     random_offset: Annotated[int, Field(ge=0, le=5_000)] = 0
+    movement_mode: Literal["instant", "smooth"] = "instant"
+    movement_duration_ms: Annotated[int, Field(ge=0, le=10_000)] = 0
+    movement_smoothness: Annotated[int, Field(ge=0, le=100)] = 70
+    path_randomness: Annotated[int, Field(ge=0, le=100)] = 20
+    arc_direction: Literal["auto", "left", "right"] = "auto"
 
 
 class DragStepModel(BaseStep):
@@ -108,7 +113,7 @@ class PixelCheckStepModel(BaseStep):
     y: int = 0
     expected_rgb: Tuple[int, int, int] = (255, 255, 255)
     tolerance: Annotated[int, Field(ge=0, le=255)] = 10
-    mode: Literal["wait_until_match", "stop_if_mismatch", "skip_if_mismatch"] = (
+    mode: Literal["wait_until_match", "wait_until_mismatch", "stop_if_mismatch", "skip_if_mismatch"] = (
         "wait_until_match"
     )
 

@@ -9,6 +9,7 @@ type CaptureButtonProps = {
   pendingHint?: string;
   waiting?: boolean;
   disabled?: boolean;
+  waitingMode?: "disabledWhileWaiting" | "clickToCancelWhileWaiting";
   value?: string;
   valuePreview?: ReactNode;
   ariaLabel?: string;
@@ -21,11 +22,13 @@ export function CaptureButton({
   pendingHint,
   waiting,
   disabled,
+  waitingMode = "disabledWhileWaiting",
   value,
   valuePreview,
   ariaLabel,
   onCapture
 }: CaptureButtonProps) {
+  const isDisabled = Boolean(disabled || (waiting && waitingMode === "disabledWhileWaiting"));
   const rightContent = waiting && pendingHint
     ? <span className="shrink-0 rounded border border-info/40 bg-info/10 px-2 py-0.5 text-xs font-semibold text-info">{pendingHint}</span>
     : valuePreview;
@@ -38,7 +41,7 @@ export function CaptureButton({
         waiting ? "border-info/60 bg-info/10 text-info ring-2 ring-info/20 shadow-[inset_0_0_0_1px_hsl(var(--info)/0.25)]" : ""
       )}
       onClick={onCapture}
-      disabled={disabled}
+      disabled={isDisabled}
       aria-label={ariaLabel ?? `${waiting ? pendingText : idleText}${value ? `, current ${value}` : ""}`}
       aria-busy={waiting || undefined}
     >

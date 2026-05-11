@@ -4,8 +4,9 @@ import time
 import random
 import ctypes
 from dataclasses import dataclass
-from typing import Any, Tuple
+from typing import Any, Literal, Tuple
 
+import pyautogui
 from pynput import keyboard, mouse
 
 from ace_auto_click.automation.pixels import get_pixel_rgb, rgb_close
@@ -115,8 +116,68 @@ class ClickStep(PointerTargetStep):
 
 @dataclass
 class MoveStep(PointerTargetStep):
+    movement_mode: Literal["instant", "smooth"] = "instant"
+    movement_duration_ms: int = 0
+    movement_smoothness: int = 70
+    path_randomness: int = 20
+    arc_direction: Literal["auto", "left", "right"] = "auto"
+
     def _run(self, engine: Any) -> bool:
+        if self.movement_mode == "smooth":
+            return self._run_smooth(engine)
         engine._mouse_ctl.position = self.target_position()
+        return True
+
+    def _run_smooth(self, engine: Any) -> bool:
+        start = engine._mouse_ctl.position
+        start_x, start_y = (int(start[0]), int(start[1])) if start is not None else (self.x, self.y)
+        end_x, end_y = int(self.x), int(self.y)
+        distance = ((end_x - start_x) ** 2 + (end_y - start_y) ** 2) ** 0.5
+        if distance == 0:
+            engine._mouse_ctl.position = (end_x, end_y)
+            return True
+
+        duration_ms = int(self.movement_duration_ms)
+        if duration_ms <= 0:
+            duration_ms = int(max(260, min(900, 220 + (distance * 0.35))))
+        duration_s = max(0.0, duration_ms / 1000.0)
+        step_count = max(12, min(240, int(duration_s / 0.008) if duration_s > 0 else 12))
+
+        smoothness = max(0.0, min(100.0, float(self.movement_smoothness))) / 100.0
+        randomness = max(0.0, min(100.0, float(self.path_randomness))) / 100.0
+        direction = (self.arc_direction or "auto").lower()
+        direction_sign = -1 if direction == "left" else 1 if direction == "right" else random.choice([-1, 1])
+        dx, dy = end_x - start_x, end_y - start_y
+        perp_x, perp_y = -dy / distance, dx / distance
+        arc_strength = distance * (0.08 + (0.22 * smoothness))
+        arc_strength *= 1.0 + random.uniform(-0.35, 0.35) * randomness
+        mid_x = start_x + (dx * 0.5)
+        mid_y = start_y + (dy * 0.5)
+        control_x = mid_x + (perp_x * arc_strength * direction_sign) + (random.uniform(-distance, distance) * 0.03 * randomness)
+        control_y = mid_y + (perp_y * arc_strength * direction_sign) + (random.uniform(-distance, distance) * 0.03 * randomness)
+        ease_power = 1.0 + (smoothness * 0.7) + (random.uniform(-0.2, 0.2) * randomness)
+
+        start_time = time.perf_counter()
+        for index in range(1, step_count + 1):
+            if engine._stop_evt.is_set():
+                return False
+            linear_t = index / step_count
+            smooth_t = linear_t * linear_t * (3 - (2 * linear_t))
+            t = max(0.0, min(1.0, smooth_t ** ease_power))
+            inv_t = 1.0 - t
+            x = (inv_t * inv_t * start_x) + (2 * inv_t * t * control_x) + (t * t * end_x)
+            y = (inv_t * inv_t * start_y) + (2 * inv_t * t * control_y) + (t * t * end_y)
+            engine._mouse_ctl.position = (int(round(x)), int(round(y)))
+            if duration_s > 0 and index < step_count:
+                target_elapsed = duration_s * linear_t
+                while time.perf_counter() - start_time < target_elapsed:
+                    if engine._stop_evt.is_set():
+                        return False
+                    time.sleep(0.005)
+
+        if engine._stop_evt.is_set():
+            return False
+        engine._mouse_ctl.position = (end_x, end_y)
         return True
 
 
@@ -279,27 +340,36 @@ class PixelCheckStep(ActionStep):
     expected_rgb: Tuple[int, int, int] = (255, 255, 255)
     tolerance: int = 10
     mode: str = (
-        "wait_until_match"  # "wait_until_match", "stop_if_mismatch", "skip_if_mismatch"
+        "wait_until_match"  # "wait_until_match", "wait_until_mismatch", "stop_if_mismatch", "skip_if_mismatch"
     )
 
+    def _condition_satisfied(self, current: Tuple[int, int, int]) -> bool:
+        is_match = rgb_close(current, self.expected_rgb, self.tolerance)
+        if self.mode == "wait_until_mismatch":
+            return not is_match
+        return is_match
+
+    def _wait_until_condition(self, engine: Any) -> bool:
+        engine.current_step_state = "waiting"
+        waiting_emitted = False
+        while not engine._stop_evt.is_set():
+            current = get_pixel_rgb(self.x, self.y)
+            if self._condition_satisfied(current):
+                engine.current_step_state = "running"
+                if hasattr(engine, "emit_execution_event"):
+                    engine.emit_execution_event(self.id, self.type, "condition_met")
+                return True
+            engine.current_step_state = "condition_false"
+            if not waiting_emitted and hasattr(engine, "emit_execution_event"):
+                engine.emit_execution_event(self.id, self.type, "condition_waiting")
+                waiting_emitted = True
+            if not self._sleep_with_stop(engine, 0.1, 0.1):
+                return False
+        return False
+
     def _run(self, engine: Any) -> bool:
-        if self.mode == "wait_until_match":
-            engine.current_step_state = "waiting"
-            waiting_emitted = False
-            while not engine._stop_evt.is_set():
-                current = get_pixel_rgb(self.x, self.y)
-                if rgb_close(current, self.expected_rgb, self.tolerance):
-                    engine.current_step_state = "running"
-                    if hasattr(engine, "emit_execution_event"):
-                        engine.emit_execution_event(self.id, self.type, "condition_met")
-                    return True
-                engine.current_step_state = "condition_false"
-                if not waiting_emitted and hasattr(engine, "emit_execution_event"):
-                    engine.emit_execution_event(self.id, self.type, "condition_waiting")
-                    waiting_emitted = True
-                if not self._sleep_with_stop(engine, 0.1, 0.1):
-                    return False
-            return False
+        if self.mode in {"wait_until_match", "wait_until_mismatch"}:
+            return self._wait_until_condition(engine)
 
         current = get_pixel_rgb(self.x, self.y)
         is_match = rgb_close(current, self.expected_rgb, self.tolerance)
@@ -368,6 +438,10 @@ class KeyTapStep(ActionStep):
     def _key_name(self, value: Any) -> str:
         return str(value).replace("Key.", "").lower()
 
+    def _press_escape_key(self, operations: list[str]) -> None:
+        operations.append("press escape")
+        pyautogui.press("esc")
+
     def _run_with_mods(self, engine: Any, mods: list[keyboard.Key], action: Any, operations: list[str]) -> bool:
         for mod in mods:
             engine._kb_ctl.press(mod)
@@ -381,6 +455,9 @@ class KeyTapStep(ActionStep):
                 operations.append(f"release {self._key_name(mod)}")
 
     def _tap_key(self, engine: Any, key: str | keyboard.Key, operations: list[str]) -> None:
+        if key == keyboard.Key.esc:
+            self._press_escape_key(operations)
+            return
         tap = getattr(engine._kb_ctl, "tap", None)
         if callable(tap):
             operations.append(f"tap {self._key_name(key)}")

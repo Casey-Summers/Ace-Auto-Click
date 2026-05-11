@@ -249,7 +249,9 @@ def capture_next_key_press(timeout_s: float = 30, cancel_keys: set[str] | None =
                 ready.set()
 
     def on_press(key: keyboard.Key | keyboard.KeyCode) -> bool | None:
-        captured = CapturedInput(kind="key_press", key=str(key), cancelled=_is_cancel_key(key, cancel_keys))
+        # For keybind capture, Escape must be capturable as a valid keybind.
+        # Cancellation is handled by explicit session cancel, not by a key press.
+        captured = CapturedInput(kind="key_press", key=str(key), cancelled=False)
         store(captured)
         return False
 
@@ -318,9 +320,6 @@ class InputCaptureSession:
         def on_press(key: keyboard.Key | keyboard.KeyCode) -> bool | None:
             if time.monotonic() < self._armed_at:
                 return None
-            if _is_cancel_key(key, self._cancel_keys):
-                self.cancel("Input capture cancelled.")
-                return False
             value = str(key).lower()
             alias = normalize_modifier_key(value)
             if alias:

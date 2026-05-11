@@ -14,11 +14,13 @@ from ace_auto_click.api.models import (
     LoopEndStepModel,
     LoopStartStepModel,
     MoveStepModel,
+    PixelCheckStepModel,
     WaitStepModel,
 )
+from ace_auto_click.automation import actions
 from ace_auto_click.api.sequence_service import compile_sequence_timeline
 from ace_auto_click.automation.engine import ClickEngine
-from ace_auto_click.automation.actions import ActionStep, ClickStep, DragStep, KeyHoldStep, KeyTapStep, MoveStep, WaitStep
+from ace_auto_click.automation.actions import ActionStep, ClickStep, DragStep, KeyHoldStep, KeyTapStep, MoveStep, PixelCheckStep, WaitStep
 
 
 def timeline_signature(steps: list[Any]) -> list[tuple[str, str]]:
@@ -61,6 +63,16 @@ def test_compile_sequence_timeline_includes_key_hold_steps() -> None:
         ClickStepModel(id="click-1"),
     ]) == [
         ("hold-1", "execute"),
+        ("click-1", "execute"),
+    ]
+
+
+def test_compile_sequence_timeline_includes_pixel_wait_until_mismatch_steps() -> None:
+    assert timeline_signature([
+        PixelCheckStepModel(id="pixel-1", mode="wait_until_mismatch"),
+        ClickStepModel(id="click-1"),
+    ]) == [
+        ("pixel-1", "execute"),
         ("click-1", "execute"),
     ]
 
@@ -281,6 +293,61 @@ def test_wait_completion_event_is_emitted_after_wait_logic() -> None:
     assert engine.events == [("wait-1", "step_execute"), ("wait-1", "step_complete")]
 
 
+def test_pixel_wait_until_mismatch_continues_when_mismatch_is_found(monkeypatch) -> None:
+    engine = RecordingEngine()
+    step = PixelCheckStep(
+        id="pixel-1",
+        type="pixel_check",
+        x=10,
+        y=20,
+        expected_rgb=(255, 255, 255),
+        tolerance=0,
+        mode="wait_until_mismatch",
+        interval_ms=0,
+    )
+    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (0, 0, 0))
+
+    assert step.execute(engine) is True
+
+    assert engine.current_step_state == "running"
+    assert engine.events == [
+        ("pixel-1", "step_execute"),
+        ("pixel-1", "condition_met"),
+        ("pixel-1", "step_complete"),
+    ]
+
+
+def test_sequence_continues_after_wait_until_mismatch_condition(monkeypatch) -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    pixel = PixelCheckStep(
+        id="pixel-1",
+        type="pixel_check",
+        x=10,
+        y=20,
+        expected_rgb=(255, 255, 255),
+        tolerance=0,
+        mode="wait_until_mismatch",
+        interval_ms=0,
+    )
+    click = ClickStep(id="click-1", type="click", x=30, y=40, interval_ms=0)
+    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (0, 0, 0))
+
+    assert pixel.execute(engine) is True
+    assert click.execute(engine) is True
+
+    assert mouse.position == (30, 40)
+    assert len(mouse.clicks) == 1
+    assert engine.events == [
+        ("pixel-1", "step_execute"),
+        ("pixel-1", "condition_met"),
+        ("pixel-1", "step_complete"),
+        ("click-1", "step_execute"),
+        ("click-1", "step_complete"),
+    ]
+
+
 def test_disabled_action_does_not_emit_completion_event() -> None:
     engine = RecordingEngine()
     step = RecordingStep(id="step-1", type="custom", enabled=False, interval_ms=0)
@@ -358,6 +425,77 @@ def test_move_step_moves_mouse_without_clicking() -> None:
     assert mouse.clicks == []
 
 
+def test_smooth_move_step_moves_through_arc_and_lands_exactly() -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    mouse.position = (0, 0)
+    mouse.positions.clear()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    step = MoveStep(
+        id="move-1",
+        type="move",
+        x=100,
+        y=0,
+        interval_ms=0,
+        movement_mode="smooth",
+        movement_duration_ms=1,
+        movement_smoothness=100,
+        path_randomness=0,
+        arc_direction="right",
+    )
+
+    assert step.execute(engine) is True
+
+    assert len(mouse.positions) > 2
+    assert any(y != 0 for _, y in mouse.positions[:-1])
+    assert mouse.position == (100, 0)
+    assert mouse.clicks == []
+
+
+def test_smooth_move_randomness_never_changes_final_target() -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    mouse.position = (5, 5)
+    mouse.positions.clear()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    step = MoveStep(
+        id="move-1",
+        type="move",
+        x=40,
+        y=30,
+        interval_ms=0,
+        movement_mode="smooth",
+        movement_duration_ms=1,
+        path_randomness=100,
+    )
+
+    assert step.execute(engine) is True
+
+    assert mouse.position == (40, 30)
+    assert mouse.positions[-1] == (40, 30)
+
+
+def test_smooth_move_stop_event_interrupts_without_forcing_target() -> None:
+    engine = RecordingEngine()
+
+    class StoppingMouse(RecordingMouse):
+        @RecordingMouse.position.setter
+        def position(self, value: tuple[int, int] | None) -> None:
+            RecordingMouse.position.fset(self, value)  # type: ignore[attr-defined]
+            if value is not None and value != (0, 0):
+                engine._stop_evt.set()
+
+    mouse = StoppingMouse()
+    mouse.position = (0, 0)
+    mouse.positions.clear()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    step = MoveStep(id="move-1", type="move", x=100, y=0, interval_ms=0, movement_mode="smooth", movement_duration_ms=100)
+
+    assert step.execute(engine) is False
+
+    assert mouse.position != (100, 0)
+
+
 def test_drag_step_holds_buttons_moves_and_releases() -> None:
     engine = RecordingEngine()
     mouse = RecordingMouse()
@@ -415,6 +553,21 @@ def test_key_hold_step_presses_and_releases_once() -> None:
     assert len(kb.releases) == 1
 
 
+def test_key_hold_step_dispatches_captured_escape_as_special_key() -> None:
+    engine = RecordingEngine()
+    kb = RecordingKeyboard()
+    engine._kb_ctl = kb  # type: ignore[attr-defined]
+    engine._register_held_key = lambda key: None  # type: ignore[attr-defined]
+    engine._unregister_held_key = lambda key: None  # type: ignore[attr-defined]
+    step = KeyHoldStep(id="hold-esc", type="key_hold", key="escape", hold_ms=1, interval_ms=0)
+
+    assert step.execute(engine) is True
+
+    assert kb.presses == [keyboard.Key.esc]
+    assert kb.releases == [keyboard.Key.esc]
+    assert engine.events == [("hold-esc", "step_execute"), ("hold-esc", "step_complete")]
+
+
 def test_key_tap_step_clicks_side_mouse_button() -> None:
     engine = RecordingEngine()
     mouse = RecordingMouse()
@@ -441,6 +594,57 @@ def test_key_tap_step_supports_shifted_number_keys() -> None:
     assert details["dispatch_path"] == "keyboard_tap"
     assert details["configured_combo"] == "shift+6"
     assert details["operations"] == ["press shift", "tap 6", "release shift"]
+
+
+def test_key_tap_step_dispatches_captured_escape_as_special_key() -> None:
+    engine = RecordingEngine()
+    kb = RecordingKeyboard()
+    pressed: list[str] = []
+    engine._kb_ctl = kb  # type: ignore[attr-defined]
+    step = KeyTapStep(id="tap-esc", type="key_tap", key="esc", interval_ms=0)
+    original_press = actions.pyautogui.press
+    actions.pyautogui.press = pressed.append  # type: ignore[method-assign]
+
+    try:
+        assert step.execute(engine) is True
+    finally:
+        actions.pyautogui.press = original_press  # type: ignore[method-assign]
+
+    assert pressed == ["esc"]
+    assert kb.presses == []
+    assert kb.releases == []
+    assert engine.events == [("tap-esc", "step_execute"), ("tap-esc", "step_complete")]
+
+
+def test_sequence_continues_after_wait_until_mismatch_then_escape_keybind(monkeypatch) -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    kb = RecordingKeyboard()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    engine._kb_ctl = kb  # type: ignore[attr-defined]
+    pixel = PixelCheckStep(
+        id="pixel-1",
+        type="pixel_check",
+        x=10,
+        y=20,
+        expected_rgb=(255, 255, 255),
+        tolerance=0,
+        mode="wait_until_mismatch",
+        interval_ms=0,
+    )
+    key = KeyTapStep(id="tap-esc", type="key_tap", key="esc", interval_ms=0)
+    click = ClickStep(id="click-1", type="click", x=30, y=40, interval_ms=0)
+    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (0, 0, 0))
+    monkeypatch.setattr(actions.pyautogui, "press", lambda key_name: kb.presses.append(key_name))
+
+    assert pixel.execute(engine) is True
+    assert key.execute(engine) is True
+    assert click.execute(engine) is True
+
+    assert kb.presses == ["esc"]
+    assert kb.releases == []
+    assert mouse.position == (30, 40)
+    assert len(mouse.clicks) == 1
 
 
 def test_key_tap_step_normalizes_shifted_symbol_digits() -> None:

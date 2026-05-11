@@ -34,6 +34,28 @@ SIDE_BUTTON_ALIASES: dict[str, str] = {
     "x2": "x2",
 }
 
+SPECIAL_KEY_ALIASES: dict[str, str] = {
+    "esc": "esc",
+    "escape": "esc",
+    "space": "space",
+    "enter": "enter",
+    "return": "enter",
+    "tab": "tab",
+    "backspace": "backspace",
+    "delete": "delete",
+    "del": "delete",
+    "home": "home",
+    "end": "end",
+    "page_up": "page_up",
+    "pageup": "page_up",
+    "page_down": "page_down",
+    "pagedown": "page_down",
+    "up": "up",
+    "down": "down",
+    "left": "left",
+    "right": "right",
+}
+
 SHIFTED_SYMBOL_BASES: dict[str, str] = {
     "!": "1",
     "@": "2",
@@ -134,6 +156,10 @@ def parse_keybind_text(text: str) -> tuple[list[keyboard.Key], str | keyboard.Ke
             continue
         if part.startswith("key."):
             base = getattr(keyboard.Key, part.split("key.", 1)[1], part)
+            continue
+        special = SPECIAL_KEY_ALIASES.get(part)
+        if special:
+            base = getattr(keyboard.Key, special, part)
             continue
         if part in SHIFTED_SYMBOL_BASES:
             base = SHIFTED_SYMBOL_BASES[part]

@@ -10,6 +10,16 @@ export const defaultState: RuntimeState = {
 };
 
 function normalizeStep(step: ActionStep): ActionStep {
+  if (step.type === "move") {
+    return {
+      ...step,
+      movement_mode: step.movement_mode ?? "instant",
+      movement_duration_ms: step.movement_duration_ms ?? 0,
+      movement_smoothness: step.movement_smoothness ?? 70,
+      path_randomness: step.path_randomness ?? 20,
+      arc_direction: step.arc_direction ?? "auto"
+    };
+  }
   if (step.type === "drag") {
     const legacyAngle = (step as unknown as { angle_degrees?: number }).angle_degrees ?? 0;
     const legacyDistance = (step as unknown as { distance_px?: number }).distance_px ?? 100;

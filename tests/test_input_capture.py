@@ -169,6 +169,53 @@ def test_next_click_route_maps_timeout_and_cancel(monkeypatch: pytest.MonkeyPatc
     assert response.status_code == 409
 
 
+def test_capture_start_routes_use_distinct_cancel_rules(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, float, set[str] | None]] = []
+
+    def fake_mouse_start(timeout_s: float, cancel_keys: set[str] | None):
+        calls.append(("mouse", timeout_s, cancel_keys))
+        return input_capture.CaptureSessionSnapshot("mouse-1", "pending")
+
+    def fake_key_start(timeout_s: float, cancel_keys: set[str] | None):
+        calls.append(("key", timeout_s, cancel_keys))
+        return input_capture.CaptureSessionSnapshot("key-1", "pending")
+
+    monkeypatch.setattr(routes.input_capture.capture_manager, "start_mouse_click", fake_mouse_start)
+    monkeypatch.setattr(routes.input_capture.capture_manager, "start_key_press", fake_key_start)
+
+    client = TestClient(app)
+    mouse_response = client.post("/input-capture/mouse-click/start")
+    key_response = client.post("/input-capture/key-press/start")
+
+    assert mouse_response.status_code == 200
+    assert key_response.status_code == 200
+    assert calls == [("mouse", 30, {"esc"}), ("key", 30, None)]
+
+
+def test_key_capture_session_captures_escape_instead_of_cancelling(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeKeyListener:
+        def __init__(self, on_press, on_release):
+            self.on_press = on_press
+            self.on_release = on_release
+
+        def start(self) -> None:
+            self.on_press(input_capture.keyboard.Key.esc)
+
+        def stop(self) -> None:
+            return None
+
+        def join(self, timeout=None) -> None:
+            return None
+
+    monkeypatch.setattr(input_capture.keyboard, "Listener", FakeKeyListener)
+    session = input_capture.InputCaptureSession("key-esc", timeout_s=1, cancel_keys={"esc"})
+    session.start_key_press()
+    snap = session.snapshot()
+    assert snap.status == "complete"
+    assert snap.result is not None
+    assert snap.result.key == "esc"
+
+
 def test_key_capture_session_captures_modifiers_in_canonical_order(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeKeyListener:
         def __init__(self, on_press, on_release):

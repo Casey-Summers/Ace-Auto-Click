@@ -133,7 +133,7 @@ function SortableRow({ row, step, selected, stateTone, flashTone, heldTone, sele
   );
 }
 
-export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, runHotkey, selectedId, selectedPixelLiveRgb, samplingPixelStepId, executingStepId, executingStepState, executionEvents, onSelect, onLoopsChange, onRunToggle, onStepsChange, onSamplePixelFromClickStep, onRunHotkeyClick }: { steps: ActionStep[]; loops: number; loopsCount: number; loopsInfinite: boolean; running: boolean; runHotkey: string; selectedId: string; selectedPixelLiveRgb?: Rgb | null; samplingPixelStepId?: string; executingStepId?: string | null; executingStepState?: "running" | "waiting" | "condition_false" | null; executionEvents?: ExecutionEvent[]; onSelect: (id: string) => void; onLoopsChange: (count: number, infinite: boolean) => void; onRunToggle: () => void; onStepsChange: (steps: ActionStep[]) => void; onSamplePixelFromClickStep?: (clickStepId: string) => void; onRunHotkeyClick: () => void; }) {
+export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, runHotkey, selectedId, selectedPixelLiveRgb, samplingPixelStepId, positionPickingStepId, executingStepId, executingStepState, executionEvents, onSelect, onLoopsChange, onRunToggle, onStepsChange, onApplyCoordinatesFromStep, onRunHotkeyClick }: { steps: ActionStep[]; loops: number; loopsCount: number; loopsInfinite: boolean; running: boolean; runHotkey: string; selectedId: string; selectedPixelLiveRgb?: Rgb | null; samplingPixelStepId?: string; positionPickingStepId?: string; executingStepId?: string | null; executingStepState?: "running" | "waiting" | "condition_false" | null; executionEvents?: ExecutionEvent[]; onSelect: (id: string) => void; onLoopsChange: (count: number, infinite: boolean) => void; onRunToggle: () => void; onStepsChange: (steps: ActionStep[]) => void; onApplyCoordinatesFromStep?: (stepId: string) => void; onRunHotkeyClick: () => void; }) {
   const [loopDraft, setLoopDraft] = useState(String(loopsCount));
   const [flashByStepId, setFlashByStepId] = useState<Record<string, "success" | "warning">>({});
   const [heldStateByStepId, setHeldStateByStepId] = useState<Record<string, "danger">>({});
@@ -288,6 +288,7 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
   };
 
   const toggleCollapse = (rowStep: LoopStartStep) => onStepsChange(steps.map((step) => (step.id === rowStep.id ? { ...step, collapsed: !rowStep.collapsed } : step)));
+  const setAllEnabled = (enabled: boolean) => onStepsChange(steps.map((step) => ({ ...step, enabled })));
 
   return (
     <CollapsibleSection
@@ -298,7 +299,22 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
     >
       <div className="flex min-h-0 h-full flex-1 flex-col overflow-hidden">
       <div className="mb-2 shrink-0 grid grid-cols-3 items-center gap-2 rounded-md bg-background/40 px-3 py-1.5 text-xs text-muted-foreground">
-        <div>Actions: <span className="font-mono">{rows.length}</span></div>
+        <div className="flex items-center gap-2">Actions: <span className="font-mono">{rows.length}</span>
+          <select
+            aria-label="Action counter options"
+            className="h-6 rounded border border-border bg-background px-1 text-[11px] text-foreground"
+            defaultValue=""
+            onChange={(event) => {
+              if (event.target.value === "enable_all") setAllEnabled(true);
+              if (event.target.value === "disable_all") setAllEnabled(false);
+              event.currentTarget.value = "";
+            }}
+          >
+            <option value="" disabled hidden>Options</option>
+            <option value="enable_all">Enable All</option>
+            <option value="disable_all">Disable All</option>
+          </select>
+        </div>
         <div className="text-center">Approx: <span className="font-mono">{totalEstimate}</span></div>
         <div className="flex items-center justify-end gap-2">
           <span>Loops</span>
@@ -318,10 +334,10 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
             <div className="relative z-10 flex flex-col gap-2">
               {rows.map((row) => {
                 const step = steps[row.index];
-                const pixelSamplingAssist = Boolean(samplingPixelStepId) && (step.type === "click" || step.type === "move");
+                const rowCoordinateAssist = (Boolean(samplingPixelStepId) || Boolean(positionPickingStepId)) && (step.type === "click" || step.type === "move");
                 const executing = executingStepId === step.id;
                 const stateTone = executionStepStateTone(executing, executingStepState);
-                return <SortableRow key={step.id} row={row} step={step} selected={executing || step.id === selectedId} stateTone={stateTone} flashTone={flashByStepId[step.id] ?? null} heldTone={heldStateByStepId[step.id] ?? null} selectedPixelLiveRgb={selectedPixelLiveRgb} pixelSamplingAssist={pixelSamplingAssist} onSelect={() => { if (pixelSamplingAssist && onSamplePixelFromClickStep) { void onSamplePixelFromClickStep(step.id); return; } onSelect(step.id); }} onToggleCollapse={toggleCollapse} />;
+                return <SortableRow key={step.id} row={row} step={step} selected={executing || step.id === selectedId} stateTone={stateTone} flashTone={flashByStepId[step.id] ?? null} heldTone={heldStateByStepId[step.id] ?? null} selectedPixelLiveRgb={selectedPixelLiveRgb} pixelSamplingAssist={rowCoordinateAssist} onSelect={() => { if (rowCoordinateAssist && onApplyCoordinatesFromStep) { void onApplyCoordinatesFromStep(step.id); return; } onSelect(step.id); }} onToggleCollapse={toggleCollapse} />;
               })}
             </div>
           </div>

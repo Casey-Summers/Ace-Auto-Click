@@ -127,6 +127,7 @@ export function App() {
       selectedId={selectedStep?.id ?? ""}
       selectedPixelLiveRgb={selectedStep?.type === "pixel_check" ? pixelLiveRgb : null}
       samplingPixelStepId={samplingPixelStepId}
+      positionPickingStepId={captureWaitingKind === "position" ? captureWaitingStepId : ""}
       executingStepId={state.current_step_id}
       executingStepState={state.current_step_state}
       executionEvents={executionEvents}
@@ -135,7 +136,7 @@ export function App() {
       onStepsChange={patchSteps}
       onRunToggle={runToggle}
       onRunHotkeyClick={openRunHotkeySettings}
-      onSamplePixelFromClickStep={controller.samplePixelFromClickStep}
+      onApplyCoordinatesFromStep={controller.applyCoordinatesFromStep}
     />
   ) : (
     <NormalRunPanel

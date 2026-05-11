@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { SequenceBuilder } from "./SequenceBuilder";
@@ -58,6 +58,34 @@ function row(container: HTMLElement, stepId: string): HTMLElement {
 }
 
 describe("SequenceBuilder execution flashes", () => {
+  it("supports action counter options to enable and disable all steps", () => {
+    const onStepsChange = vi.fn();
+    render(
+      <SequenceBuilder
+        steps={steps}
+        loops={1}
+        loopsCount={1}
+        loopsInfinite={false}
+        running={false}
+        runHotkey="F8"
+        selectedId=""
+        executionEvents={[]}
+        onSelect={vi.fn()}
+        onLoopsChange={vi.fn()}
+        onRunToggle={vi.fn()}
+        onStepsChange={onStepsChange}
+        onRunHotkeyClick={vi.fn()}
+      />
+    );
+
+    const options = screen.getByLabelText("Action counter options");
+    fireEvent.change(options, { target: { value: "disable_all" } });
+    expect(onStepsChange).toHaveBeenNthCalledWith(1, expect.arrayContaining(steps.map((step) => expect.objectContaining({ id: step.id, enabled: false }))));
+
+    fireEvent.change(options, { target: { value: "enable_all" } });
+    expect(onStepsChange).toHaveBeenNthCalledWith(2, expect.arrayContaining(steps.map((step) => expect.objectContaining({ id: step.id, enabled: true }))));
+  });
+
   it("uses a bounded scroll viewport structure for rows", () => {
     const { container } = renderBuilder([]);
     const clipper = container.querySelector(".min-h-0.flex-1.overflow-hidden");

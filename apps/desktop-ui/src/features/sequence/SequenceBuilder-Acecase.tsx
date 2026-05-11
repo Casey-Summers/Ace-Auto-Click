@@ -313,10 +313,29 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
   };
 
   const toggleCollapse = (rowStep: LoopStartStep) => onStepsChange(steps.map((step) => (step.id === rowStep.id ? { ...step, collapsed: !rowStep.collapsed } : step)));
+  const setAllEnabled = (enabled: boolean) => onStepsChange(steps.map((step) => ({ ...step, enabled })));
 
   return (
     <CollapsibleSection className="sequence-builder-shell flex h-full min-h-0 flex-col" contentClassName="min-h-0 flex-1" title="Sequence Builder" icon={<RadioTower size={16} />} actions={<div className="flex items-center gap-2"><label className="flex items-center gap-2 text-xs text-muted-foreground">Loops<div className="relative"><Input className="h-8 w-24 pr-8" type="number" min={1} value={loopsInfinite ? "" : loopDraft} disabled={loopsInfinite} onChange={(event) => { const nextValue = event.target.value; setLoopDraft(nextValue); const parsed = Number(nextValue); if (Number.isFinite(parsed) && parsed >= 1) onLoopsChange(Math.floor(parsed), false); }} onBlur={() => { const parsed = Number(loopDraft); if (Number.isFinite(parsed) && parsed >= 1) { const safe = Math.floor(parsed); onLoopsChange(safe, false); setLoopDraft(String(safe)); } else setLoopDraft(String(loopsCount)); }} /><button className={`absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 ${loopsInfinite ? "text-accent" : "text-muted-foreground hover:text-foreground"}`} onClick={() => onLoopsChange(loopsCount, !loopsInfinite)} title="Repeat indefinitely" type="button"><Infinity size={14} /></button></div></label><SplitHotkeyActionButton tone={running ? "danger" : "success"} icon={running ? <Square size={16} /> : <RadioTower size={16} />} label={running ? "Stop sequence" : "Run sequence"} hotkey={runHotkey} onAction={onRunToggle} onHotkey={running ? onRunToggle : onRunHotkeyClick} disabled={!backendAvailable} /></div>}>
       <div className="flex min-h-0 h-full flex-1 flex-col overflow-hidden">
+      <div className="mb-2 flex items-center justify-between gap-3 px-1 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">Actions: <span className="font-mono">{rows.length}</span>
+          <select
+            aria-label="Action counter options"
+            className="h-6 rounded border border-border bg-background px-1 text-[11px] text-foreground"
+            defaultValue=""
+            onChange={(event) => {
+              if (event.target.value === "enable_all") setAllEnabled(true);
+              if (event.target.value === "disable_all") setAllEnabled(false);
+              event.target.value = "";
+            }}
+          >
+            <option value="" disabled hidden>Options</option>
+            <option value="enable_all">Enable All</option>
+            <option value="disable_all">Disable All</option>
+          </select>
+        </div>
+      </div>
       <div className="min-h-0 flex-1 overflow-hidden">
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>

@@ -26,6 +26,35 @@ def test_move_step_accepts_pointer_target_defaults() -> None:
     assert step.x == 0
     assert step.y == 0
     assert step.random_offset == 0
+    assert step.movement_mode == "instant"
+    assert step.movement_duration_ms == 0
+    assert step.movement_smoothness == 70
+    assert step.path_randomness == 20
+    assert step.arc_direction == "auto"
+
+
+def test_move_step_accepts_smooth_transition_fields() -> None:
+    step = MoveStepModel(
+        id="move-1",
+        movement_mode="smooth",
+        movement_duration_ms=450,
+        movement_smoothness=90,
+        path_randomness=35,
+        arc_direction="left",
+    )
+
+    assert step.movement_mode == "smooth"
+    assert step.movement_duration_ms == 450
+    assert step.movement_smoothness == 90
+    assert step.path_randomness == 35
+    assert step.arc_direction == "left"
+
+
+def test_move_step_rejects_out_of_range_smooth_transition_fields() -> None:
+    with pytest.raises(ValidationError):
+        MoveStepModel(id="move-1", movement_smoothness=101)
+    with pytest.raises(ValidationError):
+        MoveStepModel(id="move-1", path_randomness=-1)
 
 
 def test_drag_step_accepts_left_right_defaults() -> None:

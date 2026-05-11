@@ -1,5 +1,5 @@
 import { displayKeybind } from "./keybinds";
-import type { ActionStep, ExecutionEvent, LoopStartStep, Rgb } from "./types";
+import type { ActionStep, LoopStartStep, Rgb, RuntimeState } from "./types";
 
 export type LoopRange = { startIndex: number; endIndex: number; depth: number };
 export type Timing = { baseMs: number; randomMs: number };
@@ -16,7 +16,7 @@ export function loopDisplayCount(step: LoopStartStep): number {
 
 export function stepTitle(step: ActionStep): string {
   if (step.type === "click") return `Click ${step.button} at ${step.x}, ${step.y}`;
-  if (step.type === "move") return `Move to ${step.x}, ${step.y}`;
+  if (step.type === "move") return `${step.movement_mode === "smooth" ? "Smooth move" : "Move"} to ${step.x}, ${step.y}`;
   if (step.type === "drag") return `Drag ${step.direction} ${step.length_px}px`;
   if (step.type === "wait") return `Wait ${step.ms}ms`;
   if (step.type === "pixel_check") return `Pixel Match ${step.x}, ${step.y}`;
@@ -39,8 +39,14 @@ export function stepSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null,
     const parts: string[] = [];
     if (step.repeats !== 1) parts.push(`repeats ${step.repeats}`);
     if (step.interval_ms !== 100 || step.randomness_ms !== 0) parts.push(`pre-delay ${formatMs(step.interval_ms)}${step.randomness_ms > 0 ? ` +- ${formatMs(step.randomness_ms)}` : ""}`);
-    if (step.random_offset > 0) parts.push(`position +- ${step.random_offset}px`);
-    return { title: `Move to ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
+    if (step.movement_mode === "smooth") {
+      parts.push(step.movement_duration_ms > 0 ? `smooth ${formatMs(step.movement_duration_ms)}` : "smooth auto");
+      if (step.movement_smoothness !== 70) parts.push(`smoothness ${step.movement_smoothness}`);
+      if (step.path_randomness !== 20) parts.push(`path random ${step.path_randomness}`);
+    } else if (step.random_offset > 0) {
+      parts.push(`position +- ${step.random_offset}px`);
+    }
+    return { title: `${step.movement_mode === "smooth" ? "Smooth move" : "Move"} to ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
   }
   if (step.type === "drag") {
     const parts: string[] = [];
@@ -117,6 +123,6 @@ export function resolveLoops(steps: ActionStep[]): Map<string, LoopRange> {
   return ranges;
 }
 
-export function executionStepStateTone(executing: boolean, executingStepState?: ExecutionEvent["phase"] | null) {
+export function executionStepStateTone(executing: boolean, executingStepState?: RuntimeState["current_step_state"] | null) {
   return !executing ? "info" : executingStepState === "condition_false" ? "danger" : executingStepState === "waiting" ? "warning" : "success";
 }

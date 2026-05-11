@@ -58,7 +58,7 @@ class PixelCheckStepModel(BaseStep):
     y: int = 0
     expected_rgb: Tuple[int, int, int] = (255, 255, 255)
     tolerance: Annotated[int, Field(ge=0, le=255)] = 10
-    mode: Literal["wait_until_match", "stop_if_mismatch", "skip_if_mismatch"] = (
+    mode: Literal["wait_until_match", "wait_until_mismatch", "stop_if_mismatch", "skip_if_mismatch"] = (
         "wait_until_match"
     )
 

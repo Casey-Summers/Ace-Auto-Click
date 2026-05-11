@@ -117,7 +117,8 @@ export function useAppController() {
   }, [backendAvailable, state.running]);
 
   useEffect(() => {
-    if (!pickingClickStepId && !samplingPixelStepId) {
+    const shouldPreviewPixel = selectedStep?.type === "pixel_check";
+    if (!pickingClickStepId && !samplingPixelStepId && !shouldPreviewPixel) {
       setPickCursorPosition(null);
       setPixelLiveRgb(null);
       return undefined;
@@ -126,13 +127,15 @@ export function useAppController() {
     let active = true;
     const refreshLiveState = async () => {
       try {
+        if (selectedStep?.type === "pixel_check") {
+          const pixel = await api.pixel(selectedStep.x, selectedStep.y);
+          if (active) setPixelLiveRgb(pixel.rgb);
+          return;
+        }
         const position = await api.mousePosition();
         if (!active) return;
         setPickCursorPosition(position);
-        if (selectedStep?.type === "pixel_check") {
-          const pixel = await api.pixel(position.x, position.y);
-          if (active) setPixelLiveRgb(pixel.rgb);
-        } else if (samplingPixelStepId && selectedStep?.type === "click") {
+        if (samplingPixelStepId && selectedStep?.type === "click") {
           const pixel = await api.pixel(selectedStep.x, selectedStep.y);
           if (active) setPixelLiveRgb(pixel.rgb);
         }
@@ -163,7 +166,7 @@ export function useAppController() {
       window.clearInterval(timer);
       window.removeEventListener("keydown", onKey);
     };
-  }, [pickingClickStepId, samplingPixelStepId, selectedStep?.type]);
+  }, [pickingClickStepId, samplingPixelStepId, selectedStep]);
 
   useEffect(() => {
     if (!pickingClickStepId && !samplingPixelStepId) return;
@@ -452,12 +455,12 @@ export function useAppController() {
         setLog((items) => [snapshot.error?.toLowerCase().includes("timed out") ? "Pixel sample timed out." : `Pixel sample failed: ${snapshot.error ?? "Unknown error"}`, ...items]);
         return;
       }
-      const position = snapshot.result;
-      if (!position) {
+      const capturedPosition = snapshot.result;
+      if (!capturedPosition) {
         setLog((items) => ["Pixel sample failed: capture completed without coordinates.", ...items]);
         return;
       }
-      const sample = await api.pixel(position.x, position.y);
+      const sample = await api.pixel(capturedPosition.x, capturedPosition.y);
       setSettings((current) => {
         const next = {
           ...current,
@@ -467,7 +470,7 @@ export function useAppController() {
                   ...profile,
                   steps: profile.steps.map((step) =>
                     step.id === stepId && step.type === "pixel_check"
-                      ? { ...step, x: position.x, y: position.y, expected_rgb: sample.rgb }
+                      ? { ...step, x: capturedPosition.x, y: capturedPosition.y, expected_rgb: sample.rgb }
                       : step
                   )
                 }
@@ -477,7 +480,7 @@ export function useAppController() {
         settingsRef.current = next;
         return next;
       });
-      setLog((items) => [`Sampled pixel ${sample.rgb.join(", ")} at ${position.x}, ${position.y}.`, ...items]);
+      setLog((items) => [`Sampled pixel ${sample.rgb.join(", ")} at ${capturedPosition.x}, ${capturedPosition.y}.`, ...items]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const cancelled = /cancel/i.test(message);

@@ -141,7 +141,8 @@ export function useAppController() {
   }, [state.running]);
 
   useEffect(() => {
-    if (!pickingClickStepId && !samplingPixelStepId && !pickingKeyStepId) {
+    const shouldPreviewPixel = selectedStep?.type === "pixel_check";
+    if (!pickingClickStepId && !samplingPixelStepId && !pickingKeyStepId && !shouldPreviewPixel) {
       setPickCursorPosition(null);
       setPixelLiveRgb(null);
       return undefined;
@@ -150,13 +151,15 @@ export function useAppController() {
     let active = true;
     const refreshLiveState = async () => {
       try {
+        if (selectedStep?.type === "pixel_check") {
+          const pixel = await api.pixel(selectedStep.x, selectedStep.y);
+          if (active) setPixelLiveRgb(pixel.rgb);
+          return;
+        }
         const position = await api.mousePosition();
         if (!active) return;
         setPickCursorPosition(position);
-        if (selectedStep?.type === "pixel_check") {
-          const pixel = await api.pixel(position.x, position.y);
-          if (active) setPixelLiveRgb(pixel.rgb);
-        } else if (samplingPixelStepId && (selectedStep?.type === "click" || selectedStep?.type === "move")) {
+        if (samplingPixelStepId && (selectedStep?.type === "click" || selectedStep?.type === "move")) {
           const pixel = await api.pixel(selectedStep.x, selectedStep.y);
           if (active) setPixelLiveRgb(pixel.rgb);
         }
@@ -167,27 +170,28 @@ export function useAppController() {
     void refreshLiveState();
     const timer = window.setInterval(() => void refreshLiveState(), 160);
 
+    const canCancelWithEscape = Boolean(pickingClickStepId || samplingPixelStepId);
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        const sessionId = captureSessionId.current;
-        if (sessionId) {
-          api.cancelInputCapture(sessionId).catch(() => undefined);
-          captureSessionId.current = "";
-        }
-        setPickingClickStepId("");
-        setSamplingPixelStepId("");
-        setLog((items) => ["Position picker cancelled.", ...items]);
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      const sessionId = captureSessionId.current;
+      if (sessionId) {
+        api.cancelInputCapture(sessionId).catch(() => undefined);
+        captureSessionId.current = "";
       }
+      const logLine = samplingPixelStepId ? "Pixel sample cancelled." : "Position picker cancelled.";
+      setPickingClickStepId("");
+      setSamplingPixelStepId("");
+      setLog((items) => [logLine, ...items]);
     };
-    window.addEventListener("keydown", onKey);
+    if (canCancelWithEscape) window.addEventListener("keydown", onKey);
 
     return () => {
       active = false;
       window.clearInterval(timer);
-      window.removeEventListener("keydown", onKey);
+      if (canCancelWithEscape) window.removeEventListener("keydown", onKey);
     };
-  }, [pickingClickStepId, samplingPixelStepId, pickingKeyStepId, selectedStep?.type]);
+  }, [pickingClickStepId, samplingPixelStepId, pickingKeyStepId, selectedStep]);
 
   useEffect(() => {
     if (!captureContext) return;
@@ -212,7 +216,6 @@ export function useAppController() {
   useEffect(() => {
     if (!captureContext || captureContext.kind !== "key") return undefined;
     const suppressShortcuts = (event: KeyboardEvent) => {
-      if (event.key === "Escape") return;
       event.preventDefault();
       event.stopPropagation();
     };
@@ -252,7 +255,17 @@ export function useAppController() {
 
   const pickStepKey = async () => {
     if (!selectedStep || (selectedStep.type !== "key_tap" && selectedStep.type !== "key_hold")) return;
-    if (pickingKeyStepId) return;
+    if (pickingKeyStepId) {
+      const sessionId = captureSessionId.current;
+      if (sessionId) {
+        api.cancelInputCapture(sessionId).catch(() => undefined);
+        captureSessionId.current = "";
+      }
+      setCaptureContext(null);
+      setPickingKeyStepId("");
+      setLog((items) => ["Keybind capture cancelled.", ...items]);
+      return;
+    }
     const stepId = selectedStep.id;
     setPickingKeyStepId(stepId);
     try {
@@ -483,14 +496,14 @@ export function useAppController() {
         setLog((items) => [snapshot.error?.toLowerCase().includes("timed out") ? "Pixel sample timed out." : `Pixel sample failed: ${snapshot.error ?? "Unknown error"}`, ...items]);
         return;
       }
-      const position = snapshot.result;
-      if (!position || !("x" in position) || !("y" in position)) {
+      const capturedPosition = snapshot.result;
+      if (!capturedPosition || !("x" in capturedPosition) || !("y" in capturedPosition)) {
         setLog((items) => ["Pixel sample failed: capture completed without coordinates.", ...items]);
         return;
       }
-      const sample = await api.pixel(position.x, position.y);
-      updateStepById(stepId, (step) => step.type === "pixel_check" ? { ...step, x: position.x, y: position.y, expected_rgb: sample.rgb } : step);
-      setLog((items) => [`Sampled pixel ${sample.rgb.join(", ")} at ${position.x}, ${position.y}.`, ...items]);
+      const sample = await api.pixel(capturedPosition.x, capturedPosition.y);
+      updateStepById(stepId, (step) => step.type === "pixel_check" ? { ...step, x: capturedPosition.x, y: capturedPosition.y, expected_rgb: sample.rgb } : step);
+      setLog((items) => [`Sampled pixel ${sample.rgb.join(", ")} at ${capturedPosition.x}, ${capturedPosition.y}.`, ...items]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const cancelled = /cancel/i.test(message);
@@ -585,6 +598,36 @@ export function useAppController() {
     }
   };
 
+  const applyCoordinatesFromStep = async (stepId: string) => {
+    const sourceStep = activeProfile.steps.find((step): step is Extract<ActionStep, { type: "click" | "move" }> => step.id === stepId && (step.type === "click" || step.type === "move"));
+    if (!sourceStep) return;
+
+    const targetId = samplingPixelStepId || pickingClickStepId;
+    if (!targetId) return;
+
+    try {
+      const activeSessionId = captureSessionId.current;
+      if (activeSessionId) {
+        captureSessionId.current = "";
+        api.cancelInputCapture(activeSessionId).catch(() => undefined);
+      }
+
+      if (samplingPixelStepId) {
+        const sample = await api.pixel(sourceStep.x, sourceStep.y);
+        updateStepById(targetId, (step) => step.type === "pixel_check" ? { ...step, x: sourceStep.x, y: sourceStep.y, expected_rgb: sample.rgb } : step);
+        setSamplingPixelStepId("");
+        setLog((items) => [`Copied ${sourceStep.type} coordinates ${sourceStep.x}, ${sourceStep.y} and sampled ${sample.rgb.join(", ")}.`, ...items]);
+        return;
+      }
+
+      updateStepById(targetId, (step) => (step.type === "click" || step.type === "move") ? { ...step, x: sourceStep.x, y: sourceStep.y } : step);
+      setPickingClickStepId("");
+      setLog((items) => [`Copied ${sourceStep.type} coordinates ${sourceStep.x}, ${sourceStep.y}.`, ...items]);
+    } catch (error) {
+      setLog((items) => [`Coordinate copy failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
+    }
+  };
+
   const setMode = (mode: AppMode) => {
     patchSettings({ mode });
     patchProfile({ mode });
@@ -623,6 +666,7 @@ export function useAppController() {
     samplingPixelStepId,
     samplePixel,
     samplePixelFromClickStep,
+    applyCoordinatesFromStep,
     saveDialogOpen,
     selectedProfileFile,
     selectedStep,

@@ -125,7 +125,7 @@ export type PixelCheckStep = BaseStep & {
   y: number;
   expected_rgb: [number, number, number];
   tolerance: number;
-  mode: "wait_until_match" | "stop_if_mismatch" | "skip_if_mismatch";
+  mode: "wait_until_match" | "wait_until_mismatch" | "stop_if_mismatch" | "skip_if_mismatch";
 };
 
 export type KeyTapStep = BaseStep & {

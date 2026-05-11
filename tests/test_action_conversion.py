@@ -14,11 +14,16 @@ def test_api_click_model_converts_to_runtime_step() -> None:
 
 
 def test_api_move_model_converts_to_runtime_step() -> None:
-    step = _to_action_step(MoveStepModel(id="move-1", x=10, y=20))
+    step = _to_action_step(MoveStepModel(id="move-1", x=10, y=20, movement_mode="smooth", movement_duration_ms=450, movement_smoothness=80, path_randomness=15, arc_direction="right"))
 
     assert isinstance(step, MoveStep)
     assert step.x == 10
     assert step.y == 20
+    assert step.movement_mode == "smooth"
+    assert step.movement_duration_ms == 450
+    assert step.movement_smoothness == 80
+    assert step.path_randomness == 15
+    assert step.arc_direction == "right"
 
 
 def test_api_drag_model_converts_to_runtime_step() -> None:

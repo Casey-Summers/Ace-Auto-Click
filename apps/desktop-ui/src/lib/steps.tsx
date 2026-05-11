@@ -27,7 +27,7 @@ export function createStep(type: ActionStep["type"]): ActionStep {
     return { ...base, type, x: 0, y: 0, button: "left", clicks: 1, random_offset: 0 };
   }
   if (type === "move") {
-    return { ...base, type, x: 0, y: 0, random_offset: 0 };
+    return { ...base, type, x: 0, y: 0, random_offset: 0, movement_mode: "instant", movement_duration_ms: 0, movement_smoothness: 70, path_randomness: 20, arc_direction: "auto" };
   }
   if (type === "drag") {
     return { ...base, type, x: 0, y: 0, buttons: ["left", "right"], direction: "right", length_px: 100, speed: 500, acceleration: 1.6, random_offset: 0 };

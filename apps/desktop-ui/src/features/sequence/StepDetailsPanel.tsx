@@ -75,12 +75,12 @@ function CursorPreview({ cursor, target }: { cursor: Point | null; target: Point
   );
 }
 
-function PixelMatchPreview({ live, expected }: { live: Rgb | null; expected: Rgb }) {
+function PixelMatchPreview({ live, expected, target }: { live: Rgb | null; expected: Rgb; target: Point }) {
   return (
     <div className="grid gap-2">
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-md bg-background/70 p-2 min-w-0">
-          <div className="text-xs text-muted-foreground">Current</div>
+          <div className="text-xs text-muted-foreground">Current at {target.x}, {target.y}</div>
           <div className="mt-1 h-12 rounded border border-border" style={{ backgroundColor: live ? `rgb(${live.join(",")})` : "transparent" }} />
           <div className="mt-1 font-mono text-xs min-h-[2.4em] break-words">{live ? `RGB ${live.join(", ")}` : "RGB n/a"}</div>
         </div>
@@ -94,8 +94,8 @@ function PixelMatchPreview({ live, expected }: { live: Rgb | null; expected: Rgb
   );
 }
 
-function CoordinatePreview({ x, y, offset }: { x: number; y: number; offset: number }) {
-  return <p className="text-xs text-muted-foreground">Target: <span className="font-mono">{x}, {y}</span>{offset > 0 ? ` with +- ${offset}px randomness` : ""}.</p>;
+function CoordinatePreview({ x, y, offset, exactTarget }: { x: number; y: number; offset: number; exactTarget?: boolean }) {
+  return <p className="text-xs text-muted-foreground">Target: <span className="font-mono">{x}, {y}</span>{exactTarget ? " exactly" : offset > 0 ? ` with +- ${offset}px randomness` : ""}.</p>;
 }
 
 function TimingPreview({ baseMs, randomMs, repeats }: { baseMs: number; randomMs: number; repeats: number }) {
@@ -109,7 +109,7 @@ function toggleDragButton(buttons: Array<"left" | "right" | "middle">, button: "
   return next.length > 0 ? next : [button];
 }
 
-function CaptureActionRow({ title, info, waiting, idleLabel, waitingLabel, pendingHint, value, valuePreview, ariaLabel, onCapture }: { title: string; info: string; waiting?: boolean; idleLabel: string; waitingLabel?: string; pendingHint?: string; value?: string; valuePreview?: ReactNode; ariaLabel?: string; onCapture: () => void }) {
+function CaptureActionRow({ title, info, waiting, idleLabel, waitingLabel, pendingHint, waitingMode, value, valuePreview, ariaLabel, onCapture }: { title: string; info: string; waiting?: boolean; idleLabel: string; waitingLabel?: string; pendingHint?: string; waitingMode?: "disabledWhileWaiting" | "clickToCancelWhileWaiting"; value?: string; valuePreview?: ReactNode; ariaLabel?: string; onCapture: () => void }) {
   return (
     <FieldRow title={title} info={info}>
       <CaptureButton
@@ -117,7 +117,7 @@ function CaptureActionRow({ title, info, waiting, idleLabel, waitingLabel, pendi
         pendingText={waitingLabel}
         pendingHint={pendingHint}
         waiting={waiting}
-        disabled={Boolean(waiting)}
+        waitingMode={waitingMode}
         value={value}
         valuePreview={valuePreview}
         ariaLabel={ariaLabel}
@@ -172,6 +172,7 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
               info="Waits for the next click and records its exact screen location for this action."
               waiting={pickingClickPosition}
               idleLabel={step.type === "click" ? "Pick Click Position" : step.type === "move" ? "Pick Move Position" : "Pick Drag Start"}
+              pendingHint="Esc cancels"
               onCapture={onPickClickPosition}
             />
           ) : null}
@@ -182,14 +183,15 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
               waiting={pickingKey}
               idleLabel="Change keybind"
               waitingLabel="Press key or side button..."
-              pendingHint="Esc cancels"
+              pendingHint="Click again to cancel"
+              waitingMode="clickToCancelWhileWaiting"
               value={keybindDisplay}
               valuePreview={<Keycap>{keybindDisplay}</Keycap>}
               onCapture={onPickKey}
             />
           ) : null}
 
-          {step.type === "pixel_check" ? <><CaptureActionRow title="Pixel Sampler" info="Arms pixel sampling; next click captures current color at that location." waiting={samplingPixel} idleLabel="Sample Pixel" onCapture={onSamplePixel} /><FieldRow title="Mismatch Mode" info="Action to take when color does not match."><Select value={step.mode} onChange={(event) => onChange({ mode: event.target.value as "wait_until_match" | "stop_if_mismatch" | "skip_if_mismatch" })}><option value="wait_until_match">wait until match</option><option value="stop_if_mismatch">stop if mismatch</option><option value="skip_if_mismatch">skip if mismatch</option></Select></FieldRow></> : null}
+          {step.type === "pixel_check" ? <><CaptureActionRow title="Pixel Sampler" info="Arms pixel sampling; next click captures current color at that location." waiting={samplingPixel} idleLabel="Sample Pixel" pendingHint="Esc cancels" onCapture={onSamplePixel} /><FieldRow title="Mismatch Mode" info="Action to take when color does not match."><Select value={step.mode} onChange={(event) => onChange({ mode: event.target.value as "wait_until_match" | "wait_until_mismatch" | "stop_if_mismatch" | "skip_if_mismatch" })}><option value="wait_until_match">wait until match</option><option value="wait_until_mismatch">wait until mismatch</option><option value="stop_if_mismatch">stop if mismatch</option><option value="skip_if_mismatch">skip if mismatch</option></Select></FieldRow><FieldRow title="Pixel X" info="Horizontal screen coordinate inspected by this pixel check."><Input aria-label="Pixel X" type="number" value={step.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></FieldRow><FieldRow title="Pixel Y" info="Vertical screen coordinate inspected by this pixel check."><Input aria-label="Pixel Y" type="number" value={step.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></FieldRow></> : null}
 
           {!isLoopMarker ? <FieldRow title="Repeat Count" info="Number of times this step repeats before the next step."><Input type="number" value={step.repeats} onChange={(event) => onChange({ repeats: Number(event.target.value) })} /></FieldRow> : null}
           {!isLoopMarker ? <FieldRow title="Base Delay (ms)" info="Safety delay applied before this step runs."><Input type="number" value={step.interval_ms} onChange={(event) => onChange({ interval_ms: Number(event.target.value) })} /></FieldRow> : null}
@@ -197,7 +199,7 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
 
           {step.type === "click" ? <><FieldRow title="Mouse X" info="Horizontal screen coordinate."><Input type="number" value={step.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></FieldRow><FieldRow title="Mouse Y" info="Vertical screen coordinate."><Input type="number" value={step.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></FieldRow><FieldRow title="Button" info="Mouse button to click."><Select value={step.button} onChange={(event) => onChange({ button: event.target.value as "left" | "right" | "middle" })}><option value="left">left</option><option value="right">right</option><option value="middle">middle</option></Select></FieldRow><FieldRow title="Clicks" info="Number of click presses per step run."><Input type="number" value={step.clicks} onChange={(event) => onChange({ clicks: Number(event.target.value) })} /></FieldRow><FieldRow title="Position Randomness (px)" info="Random offset around target point."><Input type="number" value={step.random_offset} onChange={(event) => onChange({ random_offset: Number(event.target.value) })} /></FieldRow><CoordinatePreview x={step.x} y={step.y} offset={step.random_offset} /></> : null}
 
-          {step.type === "move" ? <><FieldRow title="Mouse X" info="Horizontal screen coordinate."><Input type="number" value={step.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></FieldRow><FieldRow title="Mouse Y" info="Vertical screen coordinate."><Input type="number" value={step.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></FieldRow><FieldRow title="Position Randomness (px)" info="Random offset around target point."><Input type="number" value={step.random_offset} onChange={(event) => onChange({ random_offset: Number(event.target.value) })} /></FieldRow><CoordinatePreview x={step.x} y={step.y} offset={step.random_offset} /></> : null}
+          {step.type === "move" ? <><FieldRow title="Mouse X" info="Horizontal screen coordinate."><Input type="number" value={step.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></FieldRow><FieldRow title="Mouse Y" info="Vertical screen coordinate."><Input type="number" value={step.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></FieldRow><FieldRow title="Move Transition" info="Instant jumps directly. Smooth moves from the current cursor position along a natural arc and lands exactly on the target."><Select aria-label="Move Transition" value={step.movement_mode} onChange={(event) => onChange({ movement_mode: event.target.value as "instant" | "smooth" })}><option value="instant">Instant</option><option value="smooth">Smooth</option></Select></FieldRow>{step.movement_mode === "smooth" ? <><FieldRow title="Duration (ms)" info="Smooth movement duration. Use 0 to calculate a human-like duration from travel distance."><Input aria-label="Move Duration" type="number" min={0} max={10000} value={step.movement_duration_ms} onChange={(event) => onChange({ movement_duration_ms: Number(event.target.value) })} /></FieldRow><FieldRow title="Smoothness" info="Higher values increase easing and arc strength."><Input aria-label="Move Smoothness" type="range" min={0} max={100} value={step.movement_smoothness} onChange={(event) => onChange({ movement_smoothness: Number(event.target.value) })} /></FieldRow><FieldRow title="Path Randomness" info="Randomizes arc shape and timing without changing the final target coordinate."><Input aria-label="Move Path Randomness" type="range" min={0} max={100} value={step.path_randomness} onChange={(event) => onChange({ path_randomness: Number(event.target.value) })} /></FieldRow><FieldRow title="Arc Direction" info="Direction of the smooth movement arc relative to the travel line."><Select aria-label="Move Arc Direction" value={step.arc_direction} onChange={(event) => onChange({ arc_direction: event.target.value as "auto" | "left" | "right" })}><option value="auto">auto</option><option value="left">left</option><option value="right">right</option></Select></FieldRow><CoordinatePreview x={step.x} y={step.y} offset={0} exactTarget /></> : <><FieldRow title="Position Randomness (px)" info="Random offset around target point."><Input type="number" value={step.random_offset} onChange={(event) => onChange({ random_offset: Number(event.target.value) })} /></FieldRow><CoordinatePreview x={step.x} y={step.y} offset={step.random_offset} /></>}</> : null}
 
           {step.type === "drag" ? <><FieldRow title="Held Buttons" info="Mouse buttons held while dragging."><div className="grid grid-cols-3 gap-2">{(["left", "right", "middle"] as const).map((button) => <label key={button} className="flex items-center justify-between rounded-lg bg-background/70 p-2 text-sm">{button}<input type="checkbox" checked={step.buttons.includes(button)} onChange={() => onChange({ buttons: toggleDragButton(step.buttons, button) })} /></label>)}</div></FieldRow><FieldRow title="Direction" info="Drag direction from the start point."><Select value={step.direction} onChange={(event) => onChange({ direction: event.target.value as "right" | "left" | "up" | "down" })}><option value="right">right</option><option value="left">left</option><option value="up">up</option><option value="down">down</option></Select></FieldRow><FieldRow title="Length (px)" info="How far to drag."><Input type="number" value={step.length_px} onChange={(event) => onChange({ length_px: Number(event.target.value) })} /></FieldRow><FieldRow title="Speed (px/s)" info="Drag movement speed in pixels per second."><Input type="number" min={50} max={5000} value={step.speed} onChange={(event) => onChange({ speed: Number(event.target.value) })} /></FieldRow><FieldRow title="Mouse X" info="Horizontal screen coordinate where the drag begins."><Input type="number" value={step.x} onChange={(event) => onChange({ x: Number(event.target.value) })} /></FieldRow><FieldRow title="Mouse Y" info="Vertical screen coordinate where the drag begins."><Input type="number" value={step.y} onChange={(event) => onChange({ y: Number(event.target.value) })} /></FieldRow><FieldRow title="Position Randomness (px)" info="Random offset around the drag start point."><Input type="number" value={step.random_offset} onChange={(event) => onChange({ random_offset: Number(event.target.value) })} /></FieldRow><CoordinatePreview x={step.x} y={step.y} offset={step.random_offset} /></> : null}
 
@@ -221,7 +223,7 @@ export function StepDetailsPanel({ step, pickCursorPosition, pickingClickPositio
           })() : undefined}
         >
           {step.type === "click" || step.type === "move" || step.type === "drag" ? <CursorPreview cursor={pickCursorPosition ?? null} target={{ x: step.x, y: step.y }} /> : null}
-          {step.type === "pixel_check" ? <PixelMatchPreview live={pixelLiveRgb ?? null} expected={step.expected_rgb} /> : null}
+          {step.type === "pixel_check" ? <PixelMatchPreview live={pixelLiveRgb ?? null} expected={step.expected_rgb} target={{ x: step.x, y: step.y }} /> : null}
         </ActionDetailsSection>
       </div>
     </CollapsibleSection>
