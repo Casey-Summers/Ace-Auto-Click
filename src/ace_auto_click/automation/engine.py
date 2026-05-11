@@ -39,6 +39,13 @@ class SequenceTimelineNode:
     action: ActionStep | None = None
 
 
+@dataclass
+class _LoopFrame:
+    enter_step_id: str
+    exit_step_id: str
+    exit_index: int
+
+
 class ClickEngine:
     def __init__(self, on_status: Optional[StatusCb] = None) -> None:
         self._on_status = on_status or (lambda _: None)
@@ -55,6 +62,7 @@ class ClickEngine:
         self._execution_run_id = 0
         self._execution_lock = threading.Lock()
         self._held_keys: set[Any] = set()
+        self._exit_current_loop_requested = False
 
     def emit_execution_event(self, step_id: str, step_type: str, phase: str, details: dict[str, Any] | None = None) -> None:
         with self._execution_lock:
@@ -100,6 +108,9 @@ class ClickEngine:
                 pass
             finally:
                 self._held_keys.discard(key)
+
+    def request_exit_current_loop(self) -> None:
+        self._exit_current_loop_requested = True
 
     def start_clicking(
         self, settings: ClickSettings, pixel_cond: PixelCondition
@@ -213,23 +224,64 @@ class ClickEngine:
         def run() -> None:
             self._begin_execution_run()
             self._stop_evt.clear()
+            self._exit_current_loop_requested = False
             self._on_status("Advanced Mode: ON")
             try:
+                enter_to_exit_step_id: dict[int, str] = {}
+                marker_stack: list[int] = []
+                for idx, node in enumerate(timeline):
+                    if node.phase_kind == "loop_enter":
+                        marker_stack.append(idx)
+                    elif node.phase_kind in {"loop_repeat", "loop_exit"} and marker_stack:
+                        enter_idx = marker_stack.pop()
+                        enter_to_exit_step_id[enter_idx] = node.row_step_id
+
                 loop_count = 0
                 while (loops == 0 or loop_count < loops) and not self._stop_evt.is_set():
-                    for node in timeline:
+                    loop_stack: list[_LoopFrame] = []
+                    index = 0
+                    while index < len(timeline):
+                        node = timeline[index]
                         if self._stop_evt.is_set():
                             break
                         self.current_step_id = node.row_step_id
+                        if node.phase_kind == "loop_enter":
+                            exit_step_id = enter_to_exit_step_id.get(index)
+                            if exit_step_id is not None:
+                                loop_stack.append(_LoopFrame(enter_step_id=node.row_step_id, exit_step_id=exit_step_id, exit_index=-1))
+                        elif node.phase_kind in {"loop_repeat", "loop_exit"} and loop_stack:
+                            loop_stack.pop()
                         if node.phase_kind != "execute":
                             self.current_step_state = "waiting" if node.phase_kind == "step_wait" else None
                             self.emit_execution_event(node.row_step_id, node.step_type, node.phase_kind)
+                            index += 1
                             continue
                         if node.action is None or node.action.enabled is not True:
+                            index += 1
                             continue
                         cont = node.action.execute(self)
                         if not cont:
                             break
+                        if self._exit_current_loop_requested:
+                            if loop_stack:
+                                frame = loop_stack.pop()
+                                target_index = -1
+                                for probe_index in range(index + 1, len(timeline)):
+                                    probe = timeline[probe_index]
+                                    if probe.row_step_id == frame.exit_step_id and probe.phase_kind == "loop_exit":
+                                        target_index = probe_index
+                                        break
+                                if target_index < 0:
+                                    self._exit_current_loop_requested = False
+                                    index += 1
+                                    continue
+                                self.current_step_state = None
+                                self.emit_execution_event(frame.exit_step_id, "loop_end", "loop_exit")
+                                index = target_index + 1
+                                self._exit_current_loop_requested = False
+                                continue
+                            self._exit_current_loop_requested = False
+                        index += 1
 
                     loop_count += 1
                     if loops == 0:

@@ -121,11 +121,20 @@ export type MoveStep = BaseStep & {
   x: number;
   y: number;
   random_offset: number;
-  movement_mode: "instant" | "smooth";
+  movement_mode: "instant" | "smooth" | "natural";
   movement_duration_ms: number;
   movement_smoothness: number;
   path_randomness: number;
   arc_direction: "auto" | "left" | "right";
+  natural_randomness: number;
+  natural_overshoot_chance: number;
+  natural_overshoot_px: number;
+  natural_overshoot_severity: number;
+  natural_period_min_px: number;
+  natural_period_max_px: number;
+  natural_amplitude_min_px: number;
+  natural_amplitude_max_px: number;
+  natural_peak_reversal_chance: number;
 };
 
 export type DragStep = BaseStep & {
@@ -152,7 +161,7 @@ export type PixelCheckStep = BaseStep & {
   y: number;
   expected_rgb: [number, number, number];
   tolerance: number;
-  mode: "wait_until_match" | "wait_until_mismatch" | "stop_if_mismatch" | "skip_if_mismatch";
+  mode: "wait_until_match" | "wait_until_mismatch" | "stop_if_mismatch" | "skip_if_mismatch" | "exit_loop_when_match";
 };
 
 export type KeyTapStep = BaseStep & {

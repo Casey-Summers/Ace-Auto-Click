@@ -426,6 +426,15 @@ describe("App", () => {
     expect(step.movement_smoothness).toBe(70);
     expect(step.path_randomness).toBe(20);
     expect(step.arc_direction).toBe("auto");
+    expect(step.natural_randomness).toBe(35);
+    expect(step.natural_overshoot_chance).toBe(30);
+    expect(step.natural_overshoot_px).toBe(14);
+    expect(step.natural_overshoot_severity).toBe(45);
+    expect(step.natural_period_min_px).toBe(18);
+    expect(step.natural_period_max_px).toBe(48);
+    expect(step.natural_amplitude_min_px).toBe(2);
+    expect(step.natural_amplitude_max_px).toBe(9);
+    expect(step.natural_peak_reversal_chance).toBe(28);
   });
 
   it("normalizes saved move steps with missing smooth transition fields", () => {
@@ -455,6 +464,15 @@ describe("App", () => {
     expect(step.movement_smoothness).toBe(70);
     expect(step.path_randomness).toBe(20);
     expect(step.arc_direction).toBe("auto");
+    expect(step.natural_randomness).toBe(35);
+    expect(step.natural_overshoot_chance).toBe(30);
+    expect(step.natural_overshoot_px).toBe(14);
+    expect(step.natural_overshoot_severity).toBe(45);
+    expect(step.natural_period_min_px).toBe(18);
+    expect(step.natural_period_max_px).toBe(48);
+    expect(step.natural_amplitude_min_px).toBe(2);
+    expect(step.natural_amplitude_max_px).toBe(9);
+    expect(step.natural_peak_reversal_chance).toBe(28);
   });
 
   it("edits smooth move transition controls", async () => {
@@ -476,7 +494,16 @@ describe("App", () => {
           movement_duration_ms: 0,
           movement_smoothness: 70,
           path_randomness: 20,
-          arc_direction: "auto"
+          arc_direction: "auto",
+          natural_randomness: 35,
+          natural_overshoot_chance: 30,
+          natural_overshoot_px: 14,
+          natural_overshoot_severity: 45,
+          natural_period_min_px: 18,
+          natural_period_max_px: 48,
+          natural_amplitude_min_px: 2,
+          natural_amplitude_max_px: 9,
+          natural_peak_reversal_chance: 28
         }]
       }]
     });
@@ -484,7 +511,9 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(await screen.findByText("Move to 10, 20"));
     await screen.findByText("Move Transition");
+    expect(screen.queryByText("Move Duration (ms)")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Move Transition"), { target: { value: "smooth" } });
+    expect(screen.getByText("Move Duration (ms)")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Move Duration"), { target: { value: "450" } });
     fireEvent.change(screen.getByLabelText("Move Smoothness"), { target: { value: "90" } });
     fireEvent.change(screen.getByLabelText("Move Path Randomness"), { target: { value: "35" } });
@@ -493,6 +522,60 @@ describe("App", () => {
     expect(screen.getByDisplayValue("450")).toBeInTheDocument();
     expect(screen.getByText(/Target:/)).toHaveTextContent("10, 20 exactly");
     expect(screen.getByText(/Smooth move to 10, 20/i)).toBeInTheDocument();
+  });
+
+  it("edits natural move transition controls", async () => {
+    apiMock.getSettings.mockResolvedValue({
+      ...defaultSettings,
+      profiles: [{
+        ...defaultSettings.profiles[0],
+        steps: [{
+          id: "move-2",
+          type: "move",
+          enabled: true,
+          repeats: 1,
+          interval_ms: 100,
+          randomness_ms: 0,
+          x: 30,
+          y: 40,
+          random_offset: 0,
+          movement_mode: "instant",
+          movement_duration_ms: 0,
+          movement_smoothness: 70,
+          path_randomness: 20,
+          arc_direction: "auto",
+          natural_randomness: 35,
+          natural_overshoot_chance: 30,
+          natural_overshoot_px: 14
+        }]
+      }]
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByText("Move to 30, 40"));
+    fireEvent.change(screen.getByLabelText("Move Transition"), { target: { value: "natural" } });
+    expect(screen.getByText("Move Duration (ms)")).toBeInTheDocument();
+    expect(screen.getByText("Natural Randomness")).toBeInTheDocument();
+    expect(screen.getByText("Overshoot Chance (%)")).toBeInTheDocument();
+    expect(screen.getByText("Overshoot Max (px)")).toBeInTheDocument();
+    expect(screen.getByText("Overshoot Severity")).toBeInTheDocument();
+    expect(screen.getByText("Period Min (px)")).toBeInTheDocument();
+    expect(screen.getByText("Period Max (px)")).toBeInTheDocument();
+    expect(screen.getByText("Amplitude Min (px)")).toBeInTheDocument();
+    expect(screen.getByText("Amplitude Max (px)")).toBeInTheDocument();
+    expect(screen.getByText("Peak Reversal Chance (%)")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Move Duration"), { target: { value: "320" } });
+    fireEvent.change(screen.getByLabelText("Natural Randomness"), { target: { value: "45" } });
+    fireEvent.change(screen.getByLabelText("Natural Overshoot Chance"), { target: { value: "65" } });
+    fireEvent.change(screen.getByLabelText("Natural Overshoot Px"), { target: { value: "24" } });
+    fireEvent.change(screen.getByLabelText("Natural Overshoot Severity"), { target: { value: "72" } });
+    fireEvent.change(screen.getByLabelText("Natural Period Min"), { target: { value: "12" } });
+    fireEvent.change(screen.getByLabelText("Natural Period Max"), { target: { value: "64" } });
+    fireEvent.change(screen.getByLabelText("Natural Amplitude Min"), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Natural Amplitude Max"), { target: { value: "16" } });
+    fireEvent.change(screen.getByLabelText("Natural Peak Reversal Chance"), { target: { value: "43" } });
+    expect(screen.getByDisplayValue("320")).toBeInTheDocument();
+    expect(screen.getByText(/Natural move to 30, 40/i)).toBeInTheDocument();
   });
 
 });

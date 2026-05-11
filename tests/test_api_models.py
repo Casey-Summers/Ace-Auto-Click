@@ -31,6 +31,15 @@ def test_move_step_accepts_pointer_target_defaults() -> None:
     assert step.movement_smoothness == 70
     assert step.path_randomness == 20
     assert step.arc_direction == "auto"
+    assert step.natural_randomness == 35
+    assert step.natural_overshoot_chance == 30
+    assert step.natural_overshoot_px == 14
+    assert step.natural_overshoot_severity == 45
+    assert step.natural_period_min_px == 18
+    assert step.natural_period_max_px == 48
+    assert step.natural_amplitude_min_px == 2
+    assert step.natural_amplitude_max_px == 9
+    assert step.natural_peak_reversal_chance == 28
 
 
 def test_move_step_accepts_smooth_transition_fields() -> None:
@@ -55,6 +64,34 @@ def test_move_step_rejects_out_of_range_smooth_transition_fields() -> None:
         MoveStepModel(id="move-1", movement_smoothness=101)
     with pytest.raises(ValidationError):
         MoveStepModel(id="move-1", path_randomness=-1)
+
+
+def test_move_step_accepts_natural_transition_fields() -> None:
+    step = MoveStepModel(
+        id="move-1",
+        movement_mode="natural",
+        movement_duration_ms=350,
+        natural_randomness=44,
+        natural_overshoot_chance=60,
+        natural_overshoot_px=20,
+        natural_overshoot_severity=66,
+        natural_period_min_px=12,
+        natural_period_max_px=55,
+        natural_amplitude_min_px=1,
+        natural_amplitude_max_px=13,
+        natural_peak_reversal_chance=41,
+    )
+    assert step.movement_mode == "natural"
+    assert step.movement_duration_ms == 350
+    assert step.natural_randomness == 44
+    assert step.natural_overshoot_chance == 60
+    assert step.natural_overshoot_px == 20
+    assert step.natural_overshoot_severity == 66
+    assert step.natural_period_min_px == 12
+    assert step.natural_period_max_px == 55
+    assert step.natural_amplitude_min_px == 1
+    assert step.natural_amplitude_max_px == 13
+    assert step.natural_peak_reversal_chance == 41
 
 
 def test_drag_step_accepts_left_right_defaults() -> None:

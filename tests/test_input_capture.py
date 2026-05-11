@@ -269,6 +269,58 @@ def test_key_capture_session_normalizes_ctrl_control_character(monkeypatch: pyte
     assert snap.result.key == "ctrl+a"
 
 
+def test_key_capture_session_normalizes_ctrl_number_control_character(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeKeyListener:
+        def __init__(self, on_press, on_release):
+            self.on_press = on_press
+            self.on_release = on_release
+
+        def start(self) -> None:
+            self.on_press(input_capture.keyboard.Key.ctrl_l)
+            self.on_press(type("K", (), {"char": "\x1c"})())
+
+        def stop(self) -> None:
+            return None
+
+        def join(self, timeout=None) -> None:
+            return None
+
+    monkeypatch.setattr(input_capture, "_is_windows_polling_available", lambda: False)
+    monkeypatch.setattr(input_capture.keyboard, "Listener", FakeKeyListener)
+    session = input_capture.InputCaptureSession("key-ctrl-4", timeout_s=1, cancel_keys={"esc"})
+    session.start_key_press()
+    snap = session.snapshot()
+    assert snap.status == "complete"
+    assert snap.result is not None
+    assert snap.result.key == "ctrl+4"
+
+
+def test_key_capture_session_normalizes_ctrl_number_vk_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeKeyListener:
+        def __init__(self, on_press, on_release):
+            self.on_press = on_press
+            self.on_release = on_release
+
+        def start(self) -> None:
+            self.on_press(input_capture.keyboard.Key.ctrl_l)
+            self.on_press(type("K", (), {"char": None, "vk": 0x34, "__str__": lambda self: "<52>"})())
+
+        def stop(self) -> None:
+            return None
+
+        def join(self, timeout=None) -> None:
+            return None
+
+    monkeypatch.setattr(input_capture, "_is_windows_polling_available", lambda: False)
+    monkeypatch.setattr(input_capture.keyboard, "Listener", FakeKeyListener)
+    session = input_capture.InputCaptureSession("key-ctrl-4-vk", timeout_s=1, cancel_keys={"esc"})
+    session.start_key_press()
+    snap = session.snapshot()
+    assert snap.status == "complete"
+    assert snap.result is not None
+    assert snap.result.key == "ctrl+4"
+
+
 def test_key_capture_session_captures_side_mouse_button(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeKeyListener:
         def __init__(self, on_press, on_release):
@@ -386,3 +438,29 @@ def test_key_capture_session_preserves_ctrl_digit_combo(monkeypatch: pytest.Monk
     assert snap.status == "complete"
     assert snap.result is not None
     assert snap.result.key == "ctrl+1"
+
+
+def test_key_capture_session_accepts_control_key_name_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeKeyListener:
+        def __init__(self, on_press, on_release):
+            self.on_press = on_press
+            self.on_release = on_release
+
+        def start(self) -> None:
+            key = type("KCtrl", (), {"name": "control_l", "__str__": lambda self: "Key.control_l"})()
+            self.on_press(key)
+            self.on_press(type("K", (), {"char": "a"})())
+
+        def stop(self) -> None:
+            return None
+
+        def join(self, timeout=None) -> None:
+            return None
+
+    monkeypatch.setattr(input_capture.keyboard, "Listener", FakeKeyListener)
+    session = input_capture.InputCaptureSession("key-control-a", timeout_s=1, cancel_keys={"esc"})
+    session.start_key_press()
+    snap = session.snapshot()
+    assert snap.status == "complete"
+    assert snap.result is not None
+    assert snap.result.key == "ctrl+a"

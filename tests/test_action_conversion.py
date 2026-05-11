@@ -14,16 +14,25 @@ def test_api_click_model_converts_to_runtime_step() -> None:
 
 
 def test_api_move_model_converts_to_runtime_step() -> None:
-    step = _to_action_step(MoveStepModel(id="move-1", x=10, y=20, movement_mode="smooth", movement_duration_ms=450, movement_smoothness=80, path_randomness=15, arc_direction="right"))
+    step = _to_action_step(MoveStepModel(id="move-1", x=10, y=20, movement_mode="natural", movement_duration_ms=450, movement_smoothness=80, path_randomness=15, arc_direction="right", natural_randomness=41, natural_overshoot_chance=55, natural_overshoot_px=19, natural_overshoot_severity=64, natural_period_min_px=14, natural_period_max_px=61, natural_amplitude_min_px=1, natural_amplitude_max_px=11, natural_peak_reversal_chance=36))
 
     assert isinstance(step, MoveStep)
     assert step.x == 10
     assert step.y == 20
-    assert step.movement_mode == "smooth"
+    assert step.movement_mode == "natural"
     assert step.movement_duration_ms == 450
     assert step.movement_smoothness == 80
     assert step.path_randomness == 15
     assert step.arc_direction == "right"
+    assert step.natural_randomness == 41
+    assert step.natural_overshoot_chance == 55
+    assert step.natural_overshoot_px == 19
+    assert step.natural_overshoot_severity == 64
+    assert step.natural_period_min_px == 14
+    assert step.natural_period_max_px == 61
+    assert step.natural_amplitude_min_px == 1
+    assert step.natural_amplitude_max_px == 11
+    assert step.natural_peak_reversal_chance == 36
 
 
 def test_api_drag_model_converts_to_runtime_step() -> None:

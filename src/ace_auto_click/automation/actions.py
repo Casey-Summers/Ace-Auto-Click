@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import random
 import ctypes
+import math
 from dataclasses import dataclass
 from typing import Any, Literal, Tuple
 
@@ -116,15 +117,26 @@ class ClickStep(PointerTargetStep):
 
 @dataclass
 class MoveStep(PointerTargetStep):
-    movement_mode: Literal["instant", "smooth"] = "instant"
+    movement_mode: Literal["instant", "smooth", "natural"] = "instant"
     movement_duration_ms: int = 0
     movement_smoothness: int = 70
     path_randomness: int = 20
     arc_direction: Literal["auto", "left", "right"] = "auto"
+    natural_randomness: int = 35
+    natural_overshoot_chance: int = 30
+    natural_overshoot_px: int = 14
+    natural_overshoot_severity: int = 45
+    natural_period_min_px: int = 18
+    natural_period_max_px: int = 48
+    natural_amplitude_min_px: int = 2
+    natural_amplitude_max_px: int = 9
+    natural_peak_reversal_chance: int = 28
 
     def _run(self, engine: Any) -> bool:
         if self.movement_mode == "smooth":
             return self._run_smooth(engine)
+        if self.movement_mode == "natural":
+            return self._run_natural(engine)
         engine._mouse_ctl.position = self.target_position()
         return True
 
@@ -174,6 +186,118 @@ class MoveStep(PointerTargetStep):
                     if engine._stop_evt.is_set():
                         return False
                     time.sleep(0.005)
+
+        if engine._stop_evt.is_set():
+            return False
+        engine._mouse_ctl.position = (end_x, end_y)
+        return True
+
+    def _run_natural(self, engine: Any) -> bool:
+        start = engine._mouse_ctl.position
+        start_x, start_y = (int(start[0]), int(start[1])) if start is not None else (self.x, self.y)
+        end_x, end_y = int(self.x), int(self.y)
+        dx, dy = end_x - start_x, end_y - start_y
+        distance = ((dx * dx) + (dy * dy)) ** 0.5
+        if distance == 0:
+            engine._mouse_ctl.position = (end_x, end_y)
+            return True
+
+        duration_ms = int(self.movement_duration_ms)
+        if duration_ms <= 0:
+            duration_ms = int(max(260, min(900, 220 + (distance * 0.35))))
+        duration_s = max(0.0, duration_ms / 1000.0)
+        step_count = max(12, min(240, int(duration_s / 0.008) if duration_s > 0 else 12))
+
+        randomness = max(0.0, min(100.0, float(self.natural_randomness))) / 100.0
+        overshoot_chance = max(0.0, min(100.0, float(self.natural_overshoot_chance))) / 100.0
+        overshoot_limit = max(0.0, min(500.0, float(self.natural_overshoot_px)))
+        overshoot_severity = max(0.0, min(100.0, float(self.natural_overshoot_severity))) / 100.0
+        period_min = max(6.0, min(200.0, float(self.natural_period_min_px)))
+        period_max = max(6.0, min(300.0, float(self.natural_period_max_px)))
+        if period_max < period_min:
+            period_max = period_min
+        amp_min = max(0.0, min(60.0, float(self.natural_amplitude_min_px)))
+        amp_max = max(0.0, min(80.0, float(self.natural_amplitude_max_px)))
+        if amp_max < amp_min:
+            amp_max = amp_min
+        reversal_chance = max(0.0, min(100.0, float(self.natural_peak_reversal_chance))) / 100.0
+        ux, uy = dx / distance, dy / distance
+        px, py = -uy, ux
+
+        should_overshoot = random.random() < overshoot_chance and distance >= 12
+        overshoot_distance = 0.0
+        if should_overshoot:
+            base_over = max(2.0, distance * (0.02 + (0.08 * overshoot_severity)))
+            overshoot_distance = min(overshoot_limit * (0.65 + (1.35 * overshoot_severity)), base_over + (overshoot_limit * 0.35 * overshoot_severity))
+
+        travel_distance = distance + overshoot_distance
+
+        segment_ends: list[float] = []
+        seg_end = 0.0
+        while seg_end < travel_distance:
+            period = random.uniform(period_min, period_max)
+            seg_end += period
+            segment_ends.append(min(travel_distance, seg_end))
+        if not segment_ends:
+            segment_ends = [travel_distance]
+
+        segment_signs: list[float] = []
+        current_sign = 1.0 if random.random() >= 0.5 else -1.0
+        for idx in range(len(segment_ends)):
+            if idx > 0 and random.random() < reversal_chance:
+                current_sign *= -1.0
+            segment_signs.append(current_sign)
+        segment_amps: list[float] = [random.uniform(amp_min, amp_max) for _ in segment_ends]
+
+        def local_y_at(local_x: float) -> float:
+            prev_end = 0.0
+            for idx, seg_end_x in enumerate(segment_ends):
+                if local_x <= seg_end_x or idx == len(segment_ends) - 1:
+                    seg_len = max(1e-6, seg_end_x - prev_end)
+                    seg_t = max(0.0, min(1.0, (local_x - prev_end) / seg_len))
+                    base = math.sin(seg_t * math.pi)  # one hump per segment
+                    decay = 1.0 - ((local_x / max(1.0, travel_distance)) ** (0.7 + (0.6 * randomness)))
+                    return segment_signs[idx] * segment_amps[idx] * base * max(0.05, decay)
+                prev_end = seg_end_x
+            return 0.0
+
+        start_time = time.perf_counter()
+
+        for index in range(1, step_count + 1):
+            if engine._stop_evt.is_set():
+                return False
+            linear_t = index / step_count
+            ease_exp = 0.88 + (0.18 * randomness)
+            progress_t = linear_t ** ease_exp
+            local_x = min(travel_distance, max(0.0, travel_distance * progress_t))
+            local_y = local_y_at(local_x)
+            x = start_x + (ux * local_x) + (px * local_y)
+            y = start_y + (uy * local_x) + (py * local_y)
+            engine._mouse_ctl.position = (int(round(x)), int(round(y)))
+            if duration_s > 0 and index < step_count:
+                target_elapsed = duration_s * linear_t
+                while time.perf_counter() - start_time < target_elapsed:
+                    if engine._stop_evt.is_set():
+                        return False
+                    time.sleep(0.005)
+
+        if should_overshoot and overshoot_distance > 0:
+            correction_steps = max(5, min(48, int(7 + (overshoot_distance * (1.4 + (1.9 * overshoot_severity))))))
+            correction_start = engine._mouse_ctl.position
+            if correction_start is None:
+                correction_start = (
+                    int(round(start_x + (ux * travel_distance))),
+                    int(round(start_y + (uy * travel_distance))),
+                )
+            for index in range(1, correction_steps + 1):
+                if engine._stop_evt.is_set():
+                    return False
+                t = index / correction_steps
+                eased = t * t * (3 - (2 * t))
+                x = correction_start[0] + ((end_x - correction_start[0]) * eased)
+                y = correction_start[1] + ((end_y - correction_start[1]) * eased)
+                engine._mouse_ctl.position = (int(round(x)), int(round(y)))
+                time.sleep(max(0.002, 0.005 - (0.0015 * overshoot_severity)))
 
         if engine._stop_evt.is_set():
             return False
@@ -340,7 +464,7 @@ class PixelCheckStep(ActionStep):
     expected_rgb: Tuple[int, int, int] = (255, 255, 255)
     tolerance: int = 10
     mode: str = (
-        "wait_until_match"  # "wait_until_match", "wait_until_mismatch", "stop_if_mismatch", "skip_if_mismatch"
+        "wait_until_match"  # "wait_until_match", "wait_until_mismatch", "stop_if_mismatch", "skip_if_mismatch", "exit_loop_when_match"
     )
 
     def _condition_satisfied(self, current: Tuple[int, int, int]) -> bool:
@@ -382,6 +506,10 @@ class PixelCheckStep(ActionStep):
         if self.mode == "skip_if_mismatch" and not is_match:
             # This is tricky - how to "skip"?
             # For now, we'll just return True but maybe we need a way to return "skip next N steps"
+            return True
+        if self.mode == "exit_loop_when_match" and is_match:
+            if hasattr(engine, "request_exit_current_loop"):
+                engine.request_exit_current_loop()
             return True
 
         return True

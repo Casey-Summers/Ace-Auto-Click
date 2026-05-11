@@ -78,7 +78,13 @@ def _control_char_to_key(char: str) -> str | None:
     codepoint = ord(char)
     if 1 <= codepoint <= 26:
         return chr(codepoint + 96)
-    return None
+    ctrl_number_map = {
+        0x1C: "4",
+        0x1D: "5",
+        0x1E: "6",
+        0x1F: "7",
+    }
+    return ctrl_number_map.get(codepoint)
 
 
 def _poll_windows_keybind_mouse_button(
@@ -321,7 +327,7 @@ class InputCaptureSession:
             if time.monotonic() < self._armed_at:
                 return None
             value = str(key).lower()
-            alias = normalize_modifier_key(value)
+            alias = normalize_modifier_key(value) or normalize_modifier_key(getattr(key, "name", ""))
             if alias:
                 modifiers.add(alias)
                 return None
@@ -347,7 +353,7 @@ class InputCaptureSession:
 
         def on_release(key: keyboard.Key | keyboard.KeyCode) -> bool | None:
             value = str(key).lower()
-            alias = normalize_modifier_key(value)
+            alias = normalize_modifier_key(value) or normalize_modifier_key(getattr(key, "name", ""))
             if alias:
                 modifiers.discard(alias)
             return None

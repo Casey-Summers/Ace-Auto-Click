@@ -17,7 +17,16 @@ function normalizeStep(step: ActionStep): ActionStep {
       movement_duration_ms: step.movement_duration_ms ?? 0,
       movement_smoothness: step.movement_smoothness ?? 70,
       path_randomness: step.path_randomness ?? 20,
-      arc_direction: step.arc_direction ?? "auto"
+      arc_direction: step.arc_direction ?? "auto",
+      natural_randomness: step.natural_randomness ?? 35,
+      natural_overshoot_chance: step.natural_overshoot_chance ?? 30,
+      natural_overshoot_px: step.natural_overshoot_px ?? 14,
+      natural_overshoot_severity: step.natural_overshoot_severity ?? 45,
+      natural_period_min_px: step.natural_period_min_px ?? 18,
+      natural_period_max_px: Math.max(step.natural_period_min_px ?? 18, step.natural_period_max_px ?? 48),
+      natural_amplitude_min_px: step.natural_amplitude_min_px ?? 2,
+      natural_amplitude_max_px: Math.max(step.natural_amplitude_min_px ?? 2, step.natural_amplitude_max_px ?? 9),
+      natural_peak_reversal_chance: step.natural_peak_reversal_chance ?? 28
     };
   }
   if (step.type === "drag") {

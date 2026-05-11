@@ -250,10 +250,21 @@ export function SequenceBuilder({ steps, loopsCount, loopsInfinite, running, run
     const eventRow = listRef.current?.querySelector(`[data-step-id="${lastEvent.step_id}"]`) as HTMLElement | null;
     eventRow?.scrollIntoView?.({ block: "start", behavior: "smooth" });
     for (const event of executionEvents.filter((item) => item.run_id === visualRunIdRef.current)) {
+      if (event.phase === "step_execute") {
+        setHeldStateByStepId((current) => {
+          if (!(event.step_id in current)) return current;
+          const next = { ...current };
+          delete next[event.step_id];
+          return next;
+        });
+      }
       if (event.phase === "condition_waiting") {
         if (!running) continue;
         setHeldStateByStepId((current) => ({ ...current, [event.step_id]: "danger" }));
         continue;
+      }
+      if (event.phase === "loop_enter" || event.phase === "loop_repeat" || event.phase === "loop_exit") {
+        setHeldStateByStepId({});
       }
       if (event.phase === "condition_met") {
         setHeldStateByStepId((current) => {

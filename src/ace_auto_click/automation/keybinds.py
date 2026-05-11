@@ -9,9 +9,13 @@ MODIFIER_ORDER = {"ctrl": 0, "alt": 1, "shift": 2}
 
 MODIFIER_ALIASES: dict[str, str] = {
     "ctrl": "ctrl",
+    "control": "ctrl",
     "key.ctrl": "ctrl",
+    "key.control": "ctrl",
     "key.ctrl_l": "ctrl",
     "key.ctrl_r": "ctrl",
+    "key.control_l": "ctrl",
+    "key.control_r": "ctrl",
     "shift": "shift",
     "key.shift": "shift",
     "key.shift_l": "shift",
@@ -96,7 +100,14 @@ def control_char_to_key(char: str) -> str | None:
     codepoint = ord(char)
     if 1 <= codepoint <= 26:
         return chr(codepoint + 96)
-    return None
+    # Ctrl+number control codes commonly emitted by OS/input stacks.
+    ctrl_number_map = {
+        0x1C: "4",
+        0x1D: "5",
+        0x1E: "6",
+        0x1F: "7",
+    }
+    return ctrl_number_map.get(codepoint)
 
 
 def canonical_key_name(key: keyboard.Key | keyboard.KeyCode) -> str | None:
@@ -114,6 +125,12 @@ def canonical_key_name(key: keyboard.Key | keyboard.KeyCode) -> str | None:
     value = str(key).lower()
     if value.startswith("key."):
         return value.removeprefix("key.")
+    vk_code = getattr(key, "vk", None)
+    if isinstance(vk_code, int):
+        if 0x30 <= vk_code <= 0x39:
+            return chr(vk_code)
+        if 0x41 <= vk_code <= 0x5A:
+            return chr(vk_code + 32)
     return None
 
 
@@ -142,17 +159,24 @@ def normalize_keybind_components(
 def parse_keybind_text(text: str) -> tuple[list[keyboard.Key], str | keyboard.Key]:
     parts = [part.strip().lower() for part in (text or "").split("+") if part.strip()]
     mods: list[keyboard.Key] = []
+    seen_mods: set[str] = set()
     base: str | keyboard.Key = "space"
     for part in parts:
         modifier = normalize_modifier_key(part)
         if modifier == "ctrl":
-            mods.append(keyboard.Key.ctrl)
+            if "ctrl" not in seen_mods:
+                mods.append(keyboard.Key.ctrl)
+                seen_mods.add("ctrl")
             continue
         if modifier == "shift":
-            mods.append(keyboard.Key.shift)
+            if "shift" not in seen_mods:
+                mods.append(keyboard.Key.shift)
+                seen_mods.add("shift")
             continue
         if modifier == "alt":
-            mods.append(keyboard.Key.alt)
+            if "alt" not in seen_mods:
+                mods.append(keyboard.Key.alt)
+                seen_mods.add("alt")
             continue
         if part.startswith("key."):
             base = getattr(keyboard.Key, part.split("key.", 1)[1], part)
@@ -163,8 +187,9 @@ def parse_keybind_text(text: str) -> tuple[list[keyboard.Key], str | keyboard.Ke
             continue
         if part in SHIFTED_SYMBOL_BASES:
             base = SHIFTED_SYMBOL_BASES[part]
-            if keyboard.Key.shift not in mods:
+            if "shift" not in seen_mods:
                 mods.append(keyboard.Key.shift)
+                seen_mods.add("shift")
             continue
         base = part
     return mods, base

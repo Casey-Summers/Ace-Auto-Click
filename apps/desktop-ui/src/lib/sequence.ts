@@ -16,7 +16,7 @@ export function loopDisplayCount(step: LoopStartStep): number {
 
 export function stepTitle(step: ActionStep): string {
   if (step.type === "click") return `Click ${step.button} at ${step.x}, ${step.y}`;
-  if (step.type === "move") return `${step.movement_mode === "smooth" ? "Smooth move" : "Move"} to ${step.x}, ${step.y}`;
+  if (step.type === "move") return `${step.movement_mode === "smooth" ? "Smooth move" : step.movement_mode === "natural" ? "Natural move" : "Move"} to ${step.x}, ${step.y}`;
   if (step.type === "drag") return `Drag ${step.direction} ${step.length_px}px`;
   if (step.type === "wait") return `Wait ${step.ms}ms`;
   if (step.type === "pixel_check") return `Pixel Match ${step.x}, ${step.y}`;
@@ -43,10 +43,19 @@ export function stepSummary(step: ActionStep, selectedPixelLiveRgb?: Rgb | null,
       parts.push(step.movement_duration_ms > 0 ? `smooth ${formatMs(step.movement_duration_ms)}` : "smooth auto");
       if (step.movement_smoothness !== 70) parts.push(`smoothness ${step.movement_smoothness}`);
       if (step.path_randomness !== 20) parts.push(`path random ${step.path_randomness}`);
+    } else if (step.movement_mode === "natural") {
+      parts.push(step.movement_duration_ms > 0 ? `natural ${formatMs(step.movement_duration_ms)}` : "natural auto");
+      if (step.natural_randomness !== 35) parts.push(`rnd ${step.natural_randomness}`);
+      if (step.natural_overshoot_chance !== 30) parts.push(`over ${step.natural_overshoot_chance}%`);
+      if (step.natural_overshoot_px !== 14) parts.push(`over px ${step.natural_overshoot_px}`);
+      if (step.natural_overshoot_severity !== 45) parts.push(`sev ${step.natural_overshoot_severity}`);
+      if (step.natural_period_min_px !== 18 || step.natural_period_max_px !== 48) parts.push(`period ${step.natural_period_min_px}-${step.natural_period_max_px}`);
+      if (step.natural_amplitude_min_px !== 2 || step.natural_amplitude_max_px !== 9) parts.push(`amp ${step.natural_amplitude_min_px}-${step.natural_amplitude_max_px}`);
+      if (step.natural_peak_reversal_chance !== 28) parts.push(`rev ${step.natural_peak_reversal_chance}%`);
     } else if (step.random_offset > 0) {
       parts.push(`position +- ${step.random_offset}px`);
     }
-    return { title: `${step.movement_mode === "smooth" ? "Smooth move" : "Move"} to ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
+    return { title: `${step.movement_mode === "smooth" ? "Smooth move" : step.movement_mode === "natural" ? "Natural move" : "Move"} to ${step.x}, ${step.y}`, subtext: parts.join(" / ") };
   }
   if (step.type === "drag") {
     const parts: string[] = [];

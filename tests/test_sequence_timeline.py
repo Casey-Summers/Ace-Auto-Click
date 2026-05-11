@@ -16,6 +16,7 @@ from ace_auto_click.api.models import (
     MoveStepModel,
     PixelCheckStepModel,
     WaitStepModel,
+    KeyTapStepModel,
 )
 from ace_auto_click.automation import actions
 from ace_auto_click.api.sequence_service import compile_sequence_timeline
@@ -348,6 +349,49 @@ def test_sequence_continues_after_wait_until_mismatch_condition(monkeypatch) -> 
     ]
 
 
+def test_pixel_exit_loop_when_match_requests_loop_exit(monkeypatch) -> None:
+    class LoopAwareEngine(RecordingEngine):
+        def __init__(self) -> None:
+            super().__init__()
+            self.exit_requested = False
+
+        def request_exit_current_loop(self) -> None:
+            self.exit_requested = True
+
+    engine = LoopAwareEngine()
+    step = PixelCheckStep(
+        id="pixel-1",
+        type="pixel_check",
+        x=10,
+        y=20,
+        expected_rgb=(255, 255, 255),
+        tolerance=0,
+        mode="exit_loop_when_match",
+        interval_ms=0,
+    )
+    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (255, 255, 255))
+
+    assert step.execute(engine) is True
+    assert engine.exit_requested is True
+
+
+def test_pixel_exit_loop_when_match_is_noop_without_loop_context(monkeypatch) -> None:
+    engine = RecordingEngine()
+    step = PixelCheckStep(
+        id="pixel-1",
+        type="pixel_check",
+        x=10,
+        y=20,
+        expected_rgb=(255, 255, 255),
+        tolerance=0,
+        mode="exit_loop_when_match",
+        interval_ms=0,
+    )
+    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (255, 255, 255))
+
+    assert step.execute(engine) is True
+
+
 def test_disabled_action_does_not_emit_completion_event() -> None:
     engine = RecordingEngine()
     step = RecordingStep(id="step-1", type="custom", enabled=False, interval_ms=0)
@@ -496,6 +540,103 @@ def test_smooth_move_stop_event_interrupts_without_forcing_target() -> None:
     assert mouse.position != (100, 0)
 
 
+def test_natural_move_step_moves_imperfectly_and_lands_exactly() -> None:
+    engine = RecordingEngine()
+    mouse = RecordingMouse()
+    mouse.position = (0, 0)
+    mouse.positions.clear()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    step = MoveStep(
+        id="move-natural-1",
+        type="move",
+        x=120,
+        y=0,
+        interval_ms=0,
+        movement_mode="natural",
+        movement_duration_ms=1,
+        natural_randomness=80,
+        natural_overshoot_chance=100,
+        natural_overshoot_px=18,
+        natural_overshoot_severity=70,
+        natural_period_min_px=10,
+        natural_period_max_px=40,
+        natural_amplitude_min_px=2,
+        natural_amplitude_max_px=12,
+        natural_peak_reversal_chance=60,
+    )
+
+    assert step.execute(engine) is True
+
+    assert len(mouse.positions) > 3
+    assert any(y != 0 for _, y in mouse.positions[:-1])
+    assert mouse.positions[-1] == (120, 0)
+    assert mouse.position == (120, 0)
+
+
+def test_natural_move_stop_event_interrupts_without_forcing_target() -> None:
+    engine = RecordingEngine()
+
+    class StoppingMouse(RecordingMouse):
+        @RecordingMouse.position.setter
+        def position(self, value: tuple[int, int] | None) -> None:
+            RecordingMouse.position.fset(self, value)  # type: ignore[attr-defined]
+            if value is not None and value != (0, 0):
+                engine._stop_evt.set()
+
+    mouse = StoppingMouse()
+    mouse.position = (0, 0)
+    mouse.positions.clear()
+    engine._mouse_ctl = mouse  # type: ignore[attr-defined]
+    step = MoveStep(id="move-natural-2", type="move", x=140, y=0, interval_ms=0, movement_mode="natural", movement_duration_ms=100)
+
+    assert step.execute(engine) is False
+    assert mouse.position != (140, 0)
+
+
+def test_natural_move_overshoot_severity_changes_peak_reach(monkeypatch) -> None:
+    monkeypatch.setattr(actions.random, "random", lambda: 0.0)
+    monkeypatch.setattr(actions.random, "uniform", lambda a, b: (a + b) / 2.0)
+    engine = RecordingEngine()
+    low_mouse = RecordingMouse()
+    high_mouse = RecordingMouse()
+    low_mouse.position = (0, 0)
+    high_mouse.position = (0, 0)
+    low_mouse.positions.clear()
+    high_mouse.positions.clear()
+
+    low_step = MoveStep(
+        id="move-low",
+        type="move",
+        x=100,
+        y=0,
+        interval_ms=0,
+        movement_mode="natural",
+        movement_duration_ms=1,
+        natural_overshoot_chance=100,
+        natural_overshoot_px=30,
+        natural_overshoot_severity=10,
+    )
+    high_step = MoveStep(
+        id="move-high",
+        type="move",
+        x=100,
+        y=0,
+        interval_ms=0,
+        movement_mode="natural",
+        movement_duration_ms=1,
+        natural_overshoot_chance=100,
+        natural_overshoot_px=30,
+        natural_overshoot_severity=95,
+    )
+
+    engine._mouse_ctl = low_mouse  # type: ignore[attr-defined]
+    assert low_step.execute(engine) is True
+    engine._mouse_ctl = high_mouse  # type: ignore[attr-defined]
+    assert high_step.execute(engine) is True
+
+    assert max(x for x, _ in high_mouse.positions) > max(x for x, _ in low_mouse.positions)
+
+
 def test_drag_step_holds_buttons_moves_and_releases() -> None:
     engine = RecordingEngine()
     mouse = RecordingMouse()
@@ -594,6 +735,19 @@ def test_key_tap_step_supports_shifted_number_keys() -> None:
     assert details["dispatch_path"] == "keyboard_tap"
     assert details["configured_combo"] == "shift+6"
     assert details["operations"] == ["press shift", "tap 6", "release shift"]
+
+
+def test_key_tap_step_supports_ctrl_modifier_combo() -> None:
+    engine = RecordingEngine()
+    kb = RecordingKeyboard()
+    engine._kb_ctl = kb  # type: ignore[attr-defined]
+    step = KeyTapStep(id="tap-ctrl-a", type="key_tap", key="ctrl+a", interval_ms=0)
+
+    assert step.execute(engine) is True
+
+    assert kb.presses[0] == keyboard.Key.ctrl
+    assert kb.presses[1] == "a"
+    assert kb.releases == ["a", keyboard.Key.ctrl]
 
 
 def test_key_tap_step_dispatches_captured_escape_as_special_key() -> None:
@@ -707,6 +861,18 @@ def test_key_hold_step_supports_shifted_number_keys() -> None:
     assert details["operations"] == ["press shift", "press 6", "release 6", "release shift"]
 
 
+def test_key_hold_step_supports_ctrl_modifier_combo() -> None:
+    engine = RecordingEngine()
+    kb = RecordingKeyboard()
+    engine._kb_ctl = kb  # type: ignore[attr-defined]
+    step = KeyHoldStep(id="hold-ctrl-a", type="key_hold", key="ctrl+a", hold_ms=1, interval_ms=0)
+
+    assert step.execute(engine) is True
+
+    assert kb.presses == [keyboard.Key.ctrl, "a"]
+    assert kb.releases == ["a", keyboard.Key.ctrl]
+
+
 def test_key_hold_step_normalizes_shifted_symbol_digits() -> None:
     engine = RecordingEngine()
     kb = RecordingKeyboard()
@@ -764,3 +930,89 @@ def test_duplicate_key_tap_steps_both_dispatch() -> None:
         ("tap-1-copy", "step_execute"),
         ("tap-1-copy", "step_complete"),
     ]
+
+
+def _wait_engine_stopped(engine: ClickEngine, timeout_s: float = 5.0) -> None:
+    deadline = time.time() + timeout_s
+    while engine.is_running() and time.time() < deadline:
+        time.sleep(0.01)
+    assert engine.is_running() is False
+
+
+def test_exit_loop_when_match_skips_blocking_middle_condition_and_continues(monkeypatch) -> None:
+    status_messages: list[str] = []
+    engine = ClickEngine(on_status=status_messages.append)
+    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (65, 65, 71))
+    pressed: list[str] = []
+    monkeypatch.setattr(actions.pyautogui, "press", lambda key_name: pressed.append(key_name))
+
+    steps = [
+        LoopStartStepModel(id="loop-start", loop_id="loop-a", loop_count=3),
+        PixelCheckStepModel(id="px-exit-a", mode="exit_loop_when_match", x=884, y=857, expected_rgb=(65, 65, 71), tolerance=0),
+        PixelCheckStepModel(id="px-block", mode="wait_until_mismatch", x=884, y=857, expected_rgb=(65, 65, 71), tolerance=0),
+        PixelCheckStepModel(id="px-exit-b", mode="exit_loop_when_match", x=884, y=857, expected_rgb=(65, 65, 71), tolerance=0),
+        KeyTapStepModel(id="tap-inside", key="1"),
+        LoopEndStepModel(id="loop-end", loop_id="loop-a"),
+        KeyTapStepModel(id="tap-after", key="esc"),
+    ]
+
+    engine.start_sequence_timeline(compile_sequence_timeline(steps), loops=1)
+    _wait_engine_stopped(engine)
+    events = engine.get_execution_events()
+    phases_by_step = [(e["step_id"], e["phase"]) for e in events]
+
+    assert ("px-exit-a", "condition_met") in phases_by_step
+    assert not any(step_id == "px-block" and phase in {"step_execute", "condition_waiting"} for step_id, phase in phases_by_step)
+    assert ("tap-after", "step_execute") in phases_by_step
+    assert pressed == ["esc"]
+
+
+def test_exit_loop_when_match_exits_innermost_loop_only(monkeypatch) -> None:
+    engine = ClickEngine(on_status=lambda _: None)
+    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (65, 65, 71))
+    pressed: list[str] = []
+    monkeypatch.setattr(actions.pyautogui, "press", lambda key_name: pressed.append(key_name))
+
+    steps = [
+        LoopStartStepModel(id="outer-start", loop_id="outer", loop_count=1),
+        KeyTapStepModel(id="outer-before", key="a"),
+        LoopStartStepModel(id="inner-start", loop_id="inner", loop_count=2),
+        PixelCheckStepModel(id="inner-exit", mode="exit_loop_when_match", x=884, y=857, expected_rgb=(65, 65, 71), tolerance=0),
+        PixelCheckStepModel(id="inner-block", mode="wait_until_mismatch", x=884, y=857, expected_rgb=(65, 65, 71), tolerance=0),
+        LoopEndStepModel(id="inner-end", loop_id="inner"),
+        KeyTapStepModel(id="outer-after-inner", key="b"),
+        LoopEndStepModel(id="outer-end", loop_id="outer"),
+        KeyTapStepModel(id="after-all", key="esc"),
+    ]
+
+    engine.start_sequence_timeline(compile_sequence_timeline(steps), loops=1)
+    _wait_engine_stopped(engine)
+    events = engine.get_execution_events()
+    phases_by_step = [(e["step_id"], e["phase"]) for e in events]
+
+    assert ("inner-exit", "condition_met") in phases_by_step
+    assert not any(step_id == "inner-block" and phase in {"step_execute", "condition_waiting"} for step_id, phase in phases_by_step)
+    assert ("outer-after-inner", "step_execute") in phases_by_step
+    assert ("after-all", "step_execute") in phases_by_step
+    assert pressed == ["a", "b", "esc"]
+
+
+def test_exit_loop_when_match_root_level_is_noop_and_continues(monkeypatch) -> None:
+    engine = ClickEngine(on_status=lambda _: None)
+    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (65, 65, 71))
+    pressed: list[str] = []
+    monkeypatch.setattr(actions.pyautogui, "press", lambda key_name: pressed.append(key_name))
+
+    steps = [
+        PixelCheckStepModel(id="px-root-exit", mode="exit_loop_when_match", x=884, y=857, expected_rgb=(65, 65, 71), tolerance=0),
+        KeyTapStepModel(id="tap-next", key="esc"),
+    ]
+
+    engine.start_sequence_timeline(compile_sequence_timeline(steps), loops=1)
+    _wait_engine_stopped(engine)
+    events = engine.get_execution_events()
+    phases_by_step = [(e["step_id"], e["phase"]) for e in events]
+
+    assert ("px-root-exit", "condition_met") in phases_by_step
+    assert ("tap-next", "step_execute") in phases_by_step
+    assert pressed == ["esc"]
