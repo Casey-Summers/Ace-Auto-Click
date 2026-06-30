@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
 
 from ace_auto_click.runtime.doctor import run_doctor
 from ace_auto_click.runtime.service import check_runtime, run_api, run_desktop_dev
+from ace_auto_click.runtime.input_broker import run_input_broker
 
 
 def main() -> None:
@@ -44,6 +45,12 @@ def main() -> None:
     )
     doctor_parser.set_defaults(target="doctor")
 
+    broker_parser = subparsers.add_parser("input-broker", help=argparse.SUPPRESS)
+    broker_parser.add_argument("--pipe", required=True)
+    broker_parser.add_argument("--token", required=True)
+    broker_parser.add_argument("--callback-url", required=True)
+    broker_parser.set_defaults(target="input-broker")
+
     parser.set_defaults(target="desktop")
     args = parser.parse_args()
 
@@ -53,6 +60,8 @@ def main() -> None:
         check_runtime()
     elif args.target == "doctor":
         raise SystemExit(run_doctor(args))
+    elif args.target == "input-broker":
+        run_input_broker(args.pipe, args.token, args.callback_url)
     else:
         run_desktop_dev()
 

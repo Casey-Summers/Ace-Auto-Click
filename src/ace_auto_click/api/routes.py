@@ -3,10 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 import pyautogui
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from ace_auto_click.api.models import (
     AppSettings,
+    BrokerEvent,
     BootstrapData,
     CommandResult,
     PixelSample,
@@ -15,10 +16,11 @@ from ace_auto_click.api.models import (
     ProfileDirectoryStatus,
     ProfileFile,
     RuntimeState,
+    RuntimeInfo,
     SequenceRunRequest,
     SimpleRunRequest,
 )
-from ace_auto_click.api.runtime_state import engine, hotkeys, recorder, set_status, state, trigger_emergency_stop
+from ace_auto_click.api.runtime_state import engine, hotkeys, input_broker, recorder, set_status, state, trigger_emergency_stop
 from ace_auto_click.api.sequence_service import active_profile, compile_sequence_timeline, sequence_for_run
 from ace_auto_click.api.settings_service import load_app_settings, save_app_settings
 from ace_auto_click.automation.engine import ClickSettings
@@ -32,14 +34,18 @@ from ace_auto_click.storage.profiles import (
     profile_directory_status,
     save_profile_export,
 )
+from ace_auto_click.runtime.windows import process_identity
+import os
+import uuid
 
 router = APIRouter()
+INSTANCE_ID = os.environ.get("ACE_BACKEND_INSTANCE_ID") or str(uuid.uuid4())
 
 
 def bind_runtime_hotkeys(settings: AppSettings | None = None) -> None:
     try:
         next_settings = settings or load_app_settings()
-        hotkeys.bind(next_settings.emergency_stop_hotkey, next_settings.run_toggle_hotkey)
+        input_broker.set_hotkeys(next_settings.emergency_stop_hotkey, next_settings.run_toggle_hotkey)
     except Exception as exc:
         set_status(f"Error: global hotkeys unavailable ({exc})")
 
@@ -63,7 +69,49 @@ hotkeys.set_run_toggle_handler(trigger_run_toggle)
 
 @router.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "product": ProductName}
+    return {"status": "ok", "product": ProductName, "instance_id": INSTANCE_ID}
+
+
+@router.get("/runtime/info", response_model=RuntimeInfo)
+def runtime_info() -> RuntimeInfo:
+    identity = process_identity()
+    return RuntimeInfo(
+        instance_id=INSTANCE_ID,
+        pid=int(identity["pid"]),
+        elevated=bool(identity["elevated"]),
+        dpi_awareness=str(identity["dpi_awareness"]),
+        input_broker=input_broker.snapshot().__dict__,
+    )
+
+
+@router.post("/runtime/input-broker/start", response_model=RuntimeInfo)
+@router.post("/runtime/input-broker/reconnect", response_model=RuntimeInfo)
+def start_input_broker() -> RuntimeInfo:
+    if engine.is_running():
+        raise HTTPException(status_code=409, detail="Stop automation before restarting the input service.")
+    try:
+        input_broker.start_elevated()
+    except Exception as exc:
+        set_status(f"Error: elevated input service unavailable ({exc})")
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    set_status("Elevated input service ready")
+    return runtime_info()
+
+
+@router.post("/runtime/input-broker/stop", response_model=RuntimeInfo)
+def stop_input_broker() -> RuntimeInfo:
+    input_broker.stop()
+    set_status("Local input service ready")
+    return runtime_info()
+
+
+@router.post("/runtime/broker-event", response_model=RuntimeState)
+def broker_event(event: BrokerEvent, authorization: str | None = Header(default=None)) -> RuntimeState:
+    if not input_broker.authenticate(authorization):
+        raise HTTPException(status_code=401, detail="Invalid input broker credentials.")
+    if event.action == "emergency_stop":
+        return trigger_emergency_stop()
+    return trigger_run_toggle()
 
 
 @router.get("/bootstrap", response_model=BootstrapData)
@@ -295,5 +343,6 @@ def startup() -> None:
 
 
 def shutdown() -> None:
+    input_broker.stop()
     hotkeys.stop()
     input_capture.capture_manager.cancel_pending("Application shutting down.")

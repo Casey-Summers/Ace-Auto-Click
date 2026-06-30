@@ -10,6 +10,9 @@ import { createStep } from "./lib/steps";
 const apiMock = vi.hoisted(() => ({
   getSettings: vi.fn(),
   getState: vi.fn(),
+  runtimeInfo: vi.fn(),
+  startElevatedInput: vi.fn(),
+  stopElevatedInput: vi.fn(),
   executionEvents: vi.fn(),
   runToggle: vi.fn(),
   stop: vi.fn(),
@@ -201,6 +204,20 @@ describe("App", () => {
           mode: "wait_until_match"
         }]
       }]
+    });
+    apiMock.runtimeInfo.mockResolvedValue({
+      instance_id: "test-instance",
+      pid: 1234,
+      elevated: false,
+      dpi_awareness: "per-monitor-v2",
+      input_broker: { supported: true, connected: false, elevated: false, status: "local", last_error: null }
+    });
+    apiMock.startElevatedInput.mockResolvedValue({
+      instance_id: "test-instance",
+      pid: 1234,
+      elevated: false,
+      dpi_awareness: "per-monitor-v2",
+      input_broker: { supported: true, connected: true, elevated: true, status: "ready", last_error: null }
     });
 
     render(<App />);

@@ -25,6 +25,20 @@ export type ExecutionEvent = {
   } | null;
 };
 
+export type RuntimeInfo = {
+  instance_id: string;
+  pid: number;
+  elevated: boolean;
+  dpi_awareness: string;
+  input_broker: {
+    supported: boolean;
+    connected: boolean;
+    elevated: boolean;
+    status: string;
+    last_error: string | null;
+  };
+};
+
 export type Point = {
   x: number;
   y: number;

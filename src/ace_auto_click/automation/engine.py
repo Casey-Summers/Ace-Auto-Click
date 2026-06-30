@@ -14,6 +14,7 @@ pyautogui.PAUSE = 0
 pyautogui.FAILSAFE = True
 
 from ace_auto_click.automation.actions import ActionStep
+from ace_auto_click.automation.input_backend import InputBackend, LocalInputBackend
 from ace_auto_click.automation.pixels import PixelCondition, should_run_clicking
 
 StatusCb = Callable[[str], None]
@@ -47,13 +48,14 @@ class _LoopFrame:
 
 
 class ClickEngine:
-    def __init__(self, on_status: Optional[StatusCb] = None) -> None:
+    def __init__(self, on_status: Optional[StatusCb] = None, input_backend: InputBackend | None = None) -> None:
         self._on_status = on_status or (lambda _: None)
         self._stop_evt = threading.Event()
         self._active_thread: Optional[threading.Thread] = None
 
-        self._mouse_ctl = mouse.Controller()
-        self._kb_ctl = keyboard.Controller()
+        self._input_backend = input_backend or LocalInputBackend()
+        self._mouse_ctl = self._input_backend.mouse
+        self._kb_ctl = self._input_backend.keyboard
         self.side_buttons_supported = hasattr(mouse.Button, "x1") and hasattr(mouse.Button, "x2")
         self.current_step_id: str | None = None
         self.current_step_state: str | None = None
@@ -63,6 +65,16 @@ class ClickEngine:
         self._execution_lock = threading.Lock()
         self._held_keys: set[Any] = set()
         self._exit_current_loop_requested = False
+
+    def set_input_backend(self, input_backend: InputBackend) -> None:
+        if self.is_running():
+            raise RuntimeError("Stop the active automation before changing the input service.")
+        previous = self._input_backend
+        self._input_backend = input_backend
+        self._mouse_ctl = input_backend.mouse
+        self._kb_ctl = input_backend.keyboard
+        if previous is not input_backend:
+            previous.close()
 
     def emit_execution_event(self, step_id: str, step_type: str, phase: str, details: dict[str, Any] | None = None) -> None:
         with self._execution_lock:

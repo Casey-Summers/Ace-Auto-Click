@@ -236,6 +236,26 @@ class RuntimeState(BaseModel):
     current_step_state: Optional[str] = None
 
 
+class InputBrokerState(BaseModel):
+    supported: bool
+    connected: bool = False
+    elevated: bool = False
+    status: str = "local"
+    last_error: Optional[str] = None
+
+
+class RuntimeInfo(BaseModel):
+    instance_id: str
+    pid: int
+    elevated: bool
+    dpi_awareness: str
+    input_broker: InputBrokerState
+
+
+class BrokerEvent(BaseModel):
+    action: Literal["run_toggle", "emergency_stop"]
+
+
 class ExecutionEvent(BaseModel):
     step_id: str
     step_type: str

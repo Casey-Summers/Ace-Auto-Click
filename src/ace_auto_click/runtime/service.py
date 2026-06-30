@@ -5,6 +5,10 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+import json
+import time
+import uuid
+import socket
 from pathlib import Path
 from shutil import which
 
@@ -44,11 +48,27 @@ def run_tauri_dev() -> None:
     npm = "npm.cmd" if sys.platform == "win32" else "npm"
     env = os.environ.copy()
     env.setdefault(CARGO_TARGET_ENV, str(default_cargo_target_dir()))
-    api_process = None if _api_is_running() else subprocess.Popen(
+    existing = _api_identity()
+    if existing is not None:
+        raise SystemExit(
+            "Ace Auto Click refused to reuse an existing backend on 127.0.0.1:8765 "
+            f"(instance {existing.get('instance_id', 'unknown')}). Close the older app/backend and try again."
+        )
+    if _port_in_use("127.0.0.1", 8765):
+        raise SystemExit(
+            "Port 8765 is already owned by an unrelated or incompatible process. "
+            "Ace Auto Click will not attach to it; close that process or free the port and try again."
+        )
+    instance_id = str(uuid.uuid4())
+    api_env = env.copy()
+    api_env["ACE_BACKEND_INSTANCE_ID"] = instance_id
+    api_process = subprocess.Popen(
         [sys.executable, str(ROOT / "app.py"), "api"],
         cwd=ROOT,
+        env=api_env,
     )
     try:
+        _wait_for_api(instance_id, api_process)
         try:
             subprocess.run([npm, "run", "tauri", "dev"], cwd=UI_DIR, check=True, env=env)
         except subprocess.CalledProcessError as exc:
@@ -73,12 +93,42 @@ def default_cargo_target_dir() -> Path:
     return Path(base) / "ace-auto-click" / "cargo-target"
 
 
-def _api_is_running(host: str = "127.0.0.1", port: int = 8765) -> bool:
+def _api_identity(host: str = "127.0.0.1", port: int = 8765) -> dict[str, object] | None:
     try:
         with urllib.request.urlopen(f"http://{host}:{port}/health", timeout=0.7) as response:
-            return 200 <= response.status < 300
+            if not 200 <= response.status < 300:
+                return None
+            value = json.loads(response.read().decode("utf-8"))
+            return value if isinstance(value, dict) else {"instance_id": "unknown"}
     except (OSError, urllib.error.URLError):
+        return None
+
+
+def _api_is_running(host: str = "127.0.0.1", port: int = 8765) -> bool:
+    return _api_identity(host, port) is not None
+
+
+def _port_in_use(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.25):
+            return True
+    except OSError:
         return False
+
+
+def _wait_for_api(instance_id: str, process: subprocess.Popen[bytes], timeout_s: float = 10.0) -> None:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise SystemExit("Ace Auto Click backend exited during startup.")
+        identity = _api_identity()
+        if identity is not None:
+            actual = identity.get("instance_id")
+            if actual != instance_id:
+                raise SystemExit(f"Backend ownership check failed: expected {instance_id}, received {actual}.")
+            return
+        time.sleep(0.1)
+    raise SystemExit("Timed out waiting for the owned Ace Auto Click backend.")
 
 
 def _terminate_process(process: subprocess.Popen[bytes]) -> None:

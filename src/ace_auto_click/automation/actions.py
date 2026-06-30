@@ -54,6 +54,7 @@ class ActionStep:
 
             try:
                 self._validate(engine)
+                self._prepare_execution_details(engine)
                 if hasattr(engine, "current_step_state"):
                     engine.current_step_state = "running"
                 if hasattr(engine, "emit_execution_event"):
@@ -76,6 +77,9 @@ class ActionStep:
         raise NotImplementedError
 
     def _validate(self, engine: Any) -> None:
+        return None
+
+    def _prepare_execution_details(self, engine: Any) -> None:
         return None
 
     def _report_dispatch_failure(self, engine: Any, message: str) -> None:
@@ -566,8 +570,11 @@ class KeyTapStep(ActionStep):
     def _key_name(self, value: Any) -> str:
         return str(value).replace("Key.", "").lower()
 
-    def _press_escape_key(self, operations: list[str]) -> None:
+    def _press_escape_key(self, engine: Any, operations: list[str]) -> None:
         operations.append("press escape")
+        if getattr(engine._kb_ctl, "is_remote", False):
+            engine._kb_ctl.tap(keyboard.Key.esc)
+            return
         pyautogui.press("esc")
 
     def _run_with_mods(self, engine: Any, mods: list[keyboard.Key], action: Any, operations: list[str]) -> bool:
@@ -582,41 +589,55 @@ class KeyTapStep(ActionStep):
                 engine._kb_ctl.release(mod)
                 operations.append(f"release {self._key_name(mod)}")
 
-    def _tap_key(self, engine: Any, key: str | keyboard.Key, operations: list[str]) -> None:
+    def _tap_key(self, engine: Any, key: str | keyboard.Key, operations: list[str], has_modifiers: bool) -> None:
         if key == keyboard.Key.esc:
-            self._press_escape_key(operations)
+            self._press_escape_key(engine, operations)
+            return
+        if isinstance(key, str) and not has_modifiers and not getattr(engine._kb_ctl, "is_remote", False):
+            operations.append(f"press {self._key_name(key)}")
+            pyautogui.press(key)
             return
         tap = getattr(engine._kb_ctl, "tap", None)
         if callable(tap):
             operations.append(f"tap {self._key_name(key)}")
             tap(key)
             return
-        operations.append(f"press {self._key_name(key)}")
+        operations.append(f"tap {self._key_name(key)}")
         engine._kb_ctl.press(key)
-        operations.append(f"release {self._key_name(key)}")
         engine._kb_ctl.release(key)
 
     def _run(self, engine: Any) -> bool:
         mods, base = self._parse_combo()
         mouse_button = self._mouse_button(engine)
-        operations: list[str] = []
-        details = {
+        details = self._execution_details or {
             "configured_combo": self.key or "",
             "parsed_modifiers": [self._key_name(mod) for mod in mods],
             "parsed_base": self._key_name(base),
             "dispatch_path": "keyboard_tap",
-            "operations": operations,
+            "operations": [],
         }
+        operations = details["operations"]
         self._execution_details = details
         if mouse_button is not None:
             details["dispatch_path"] = "mouse_side_button"
             details["parsed_base"] = str(mouse_button).replace("Button.", "").lower()
             return self._run_with_mods(engine, mods, lambda: (operations.append(f"click {details['parsed_base']}"), engine._mouse_ctl.click(mouse_button)), operations)
 
-        return self._run_with_mods(engine, mods, lambda: self._tap_key(engine, base, operations), operations)
+        return self._run_with_mods(engine, mods, lambda: self._tap_key(engine, base, operations, bool(mods)), operations)
 
     def _validate(self, engine: Any) -> None:
         self._mouse_button(engine)
+
+    def _prepare_execution_details(self, engine: Any) -> None:
+        mods, base = self._parse_combo()
+        mouse_button = self._mouse_button(engine)
+        self._execution_details = {
+            "configured_combo": self.key or "",
+            "parsed_modifiers": [self._key_name(mod) for mod in mods],
+            "parsed_base": str(mouse_button).replace("Button.", "").lower() if mouse_button is not None else self._key_name(base),
+            "dispatch_path": "mouse_side_button" if mouse_button is not None else "keyboard_tap",
+            "operations": [],
+        }
 
 
 @dataclass
@@ -647,15 +668,15 @@ class KeyHoldStep(ActionStep):
         mods, resolved = self._parse_combo()
         mouse_button = self._mouse_button(engine)
         delay_s = max(0, int(self.hold_ms)) / 1000.0
-        operations: list[str] = []
-        details = {
+        details = self._execution_details or {
             "configured_combo": self.key or "",
             "parsed_modifiers": [str(mod).replace("Key.", "").lower() for mod in mods],
             "parsed_base": str(resolved).replace("Key.", "").lower(),
             "dispatch_path": "keyboard_hold",
             "hold_ms": int(self.hold_ms),
-            "operations": operations,
+            "operations": [],
         }
+        operations = details["operations"]
         self._execution_details = details
 
         if mouse_button is not None:
@@ -709,3 +730,15 @@ class KeyHoldStep(ActionStep):
 
     def _validate(self, engine: Any) -> None:
         self._mouse_button(engine)
+
+    def _prepare_execution_details(self, engine: Any) -> None:
+        mods, resolved = self._parse_combo()
+        mouse_button = self._mouse_button(engine)
+        self._execution_details = {
+            "configured_combo": self.key or "",
+            "parsed_modifiers": [str(mod).replace("Key.", "").lower() for mod in mods],
+            "parsed_base": str(mouse_button if mouse_button is not None else resolved).replace("Button.", "").replace("Key.", "").lower(),
+            "dispatch_path": "mouse_side_button" if mouse_button is not None else "keyboard_hold",
+            "hold_ms": int(self.hold_ms),
+            "operations": [],
+        }

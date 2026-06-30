@@ -1,4 +1,4 @@
-import { AlertTriangle, Settings, Zap } from "lucide-react";
+import { AlertTriangle, Settings, ShieldCheck, Zap } from "lucide-react";
 
 import { ModeToggle } from "./components/ModeToggle";
 import { SplitHotkeyActionButton } from "./components/SplitHotkeyActionButton";
@@ -44,6 +44,10 @@ export function App() {
     requestSaveProfile,
     runToggle,
     executionEvents,
+    runtimeInfo,
+    inputServiceBusy,
+    startElevatedInput,
+    stopElevatedInput,
     samplePixel,
     samplingPixelStepId,
     saveDialogOpen,
@@ -63,6 +67,7 @@ export function App() {
     state,
     setMode
   } = controller;
+  const elevatedInput = Boolean(runtimeInfo?.elevated || runtimeInfo?.input_broker.connected);
 
   const header = (
     <header className="mb-4 flex items-center justify-between">
@@ -101,7 +106,21 @@ export function App() {
   );
 
   const centerTop = (
-    <ProfileManager
+    <><div className="mb-2 flex items-center justify-between rounded-xl border border-border bg-surface/55 px-3 py-2 text-xs">
+      <div className="flex items-center gap-2">
+        <ShieldCheck size={15} className={elevatedInput ? "text-success" : "text-warning"} />
+        <span>
+          Input: {elevatedInput ? "elevated service" : "local service"}
+          {runtimeInfo ? ` · DPI ${runtimeInfo.dpi_awareness} · PID ${runtimeInfo.pid}` : " · checking runtime"}
+          {runtimeInfo?.input_broker.last_error ? ` · ${runtimeInfo.input_broker.last_error}` : ""}
+        </span>
+      </div>
+      {runtimeInfo?.input_broker.supported && (!runtimeInfo.elevated || runtimeInfo.input_broker.connected) ? (
+        <Button size="sm" variant={runtimeInfo.input_broker.connected ? "ghost" : "default"} disabled={inputServiceBusy || state.running} onClick={runtimeInfo.input_broker.connected ? stopElevatedInput : startElevatedInput}>
+          {inputServiceBusy ? "Working…" : runtimeInfo.input_broker.connected ? "Use local input" : "Restart input as administrator"}
+        </Button>
+      ) : null}
+    </div><ProfileManager
       activeProfile={activeProfile}
       saving={profileSaving}
       error={profileError}
@@ -113,7 +132,7 @@ export function App() {
         setLoadDialogOpen(true);
       }}
       onOpenProfilesFolder={openProfilesFolder}
-    />
+    /></>
   );
 
   const center = settings.mode === "advanced" ? (

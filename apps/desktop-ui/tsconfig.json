@@ -17,6 +17,6 @@
     "jsx": "react-jsx"
   },
   "include": ["src"],
-  "exclude": ["src/components/EmergencyStopButton.tsx"],
+  "exclude": ["src/components/EmergencyStopButton.tsx", "src/**/*-Acecase.*"],
   "references": []
 }

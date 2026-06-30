@@ -20,6 +20,23 @@ def test_state_route_exposes_runtime_contract() -> None:
     assert "last_error" in response.json()
 
 
+def test_runtime_info_exposes_identity_and_input_service() -> None:
+    response = client.get("/runtime/info")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["instance_id"]
+    assert payload["pid"] > 0
+    assert payload["dpi_awareness"]
+    assert payload["input_broker"]["status"] in {"local", "ready", "starting", "error"}
+
+
+def test_broker_event_rejects_unauthenticated_requests() -> None:
+    response = client.post("/runtime/broker-event", json={"action": "run_toggle"})
+
+    assert response.status_code == 401
+
+
 def test_sequence_route_rejects_empty_sequence() -> None:
     response = client.post("/run/sequence", json={"steps": [], "loops": 0})
 

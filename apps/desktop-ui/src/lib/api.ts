@@ -1,4 +1,4 @@
-import type { ActionStep, AppSettings, ExecutionEvent, InputCaptureSnapshot, PixelSample, Point, ProfileDirectoryStatus, ProfileFile, RuntimeState, SimpleSettings } from "./types";
+import type { ActionStep, AppSettings, ExecutionEvent, InputCaptureSnapshot, PixelSample, Point, ProfileDirectoryStatus, ProfileFile, RuntimeInfo, RuntimeState, SimpleSettings } from "./types";
 
 const API_BASE = import.meta.env.VITE_ACE_API_BASE ?? "http://127.0.0.1:8765";
 
@@ -21,6 +21,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getState: () => request<RuntimeState>("/state"),
+  runtimeInfo: () => request<RuntimeInfo>("/runtime/info"),
+  startElevatedInput: () => request<RuntimeInfo>("/runtime/input-broker/start", { method: "POST" }),
+  stopElevatedInput: () => request<RuntimeInfo>("/runtime/input-broker/stop", { method: "POST" }),
   executionEvents: (after = 0) => request<ExecutionEvent[]>(`/execution-events?after=${after}`),
   getSettings: () => request<AppSettings>("/settings"),
   saveSettings: (settings: AppSettings) =>

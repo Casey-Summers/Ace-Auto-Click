@@ -5,7 +5,7 @@ import { defaultProfile, defaultSettings } from "../lib/defaults";
 import { displayKeybind } from "../lib/keybinds";
 import { createStep } from "../lib/steps";
 import { defaultState, normalizeSettings } from "../lib/settings";
-import type { ActionStep, AppMode, AppSettings, AutomationProfile, ExecutionEvent, Point, ProfileFile, Rgb, RuntimeState } from "../lib/types";
+import type { ActionStep, AppMode, AppSettings, AutomationProfile, ExecutionEvent, Point, ProfileFile, Rgb, RuntimeInfo, RuntimeState } from "../lib/types";
 
 type CaptureKind = "position" | "pixel" | "key";
 type CaptureContext = {
@@ -59,6 +59,8 @@ export function useAppController() {
   const settingsRef = useRef(settings);
   const [log, setLog] = useState<string[]>(["UI ready. Start the API with python app.py api."]);
   const [executionEvents, setExecutionEvents] = useState<ExecutionEvent[]>([]);
+  const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null);
+  const [inputServiceBusy, setInputServiceBusy] = useState(false);
   const executionAfter = useRef(0);
 
   const activeProfile = useMemo(
@@ -111,10 +113,11 @@ export function useAppController() {
   }, [settings.theme, settings.icon_colors_profile_dependent, settings.action_icon_colors, activeProfile.action_icon_colors]);
 
   useEffect(() => {
-    Promise.all([api.getSettings(), api.getState()])
-      .then(([nextSettings, nextState]) => {
+    Promise.all([api.getSettings(), api.getState(), api.runtimeInfo()])
+      .then(([nextSettings, nextState, nextRuntimeInfo]) => {
         setSettings(normalizeSettings(nextSettings));
         setState(nextState);
+        setRuntimeInfo(nextRuntimeInfo);
         settingsHydrated.current = true;
         setLog((items) => [`Connected to ${nextState.product_name}.`, ...items]);
       })
@@ -123,10 +126,38 @@ export function useAppController() {
     void refreshProfiles();
   }, []);
 
+  const startElevatedInput = async () => {
+    setInputServiceBusy(true);
+    try {
+      const next = await api.startElevatedInput();
+      setRuntimeInfo(next);
+      setLog((items) => ["Elevated input service connected.", ...items]);
+    } catch (error) {
+      setLog((items) => [`Elevated input service failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
+      api.runtimeInfo().then(setRuntimeInfo).catch(() => undefined);
+    } finally {
+      setInputServiceBusy(false);
+    }
+  };
+
+  const stopElevatedInput = async () => {
+    setInputServiceBusy(true);
+    try {
+      const next = await api.stopElevatedInput();
+      setRuntimeInfo(next);
+      setLog((items) => ["Using the local input service.", ...items]);
+    } catch (error) {
+      setLog((items) => [`Input service stop failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
+    } finally {
+      setInputServiceBusy(false);
+    }
+  };
+
   useEffect(() => {
     const intervalMs = state.running ? 120 : 1200;
     const timer = window.setInterval(() => {
       api.getState().then(setState).catch(() => undefined);
+      api.runtimeInfo().then(setRuntimeInfo).catch(() => undefined);
       api.executionEvents(executionAfter.current).then((events) => {
         if (!events.length) return;
         executionAfter.current = Math.max(executionAfter.current, ...events.map((event) => event.sequence_no));
@@ -681,6 +712,10 @@ export function useAppController() {
     settingsOpen,
     state,
     executionEvents,
+    runtimeInfo,
+    inputServiceBusy,
+    startElevatedInput,
+    stopElevatedInput,
     setFocusEmergency,
     setFocusKeybind,
     setMode,
