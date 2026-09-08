@@ -8,6 +8,7 @@ desktop.ini
 logs/
 app_settings.json
 profiles/*
+.agents
 
 apps/desktop-ui/node_modules/
 apps/desktop-ui/dist/

@@ -29,6 +29,22 @@ class NormalProfileSettings(BaseModel):
     double_click: bool = False
 
 
+class TargetRectModel(BaseModel):
+    left: int
+    top: int
+    width: Annotated[int, Field(gt=0)]
+    height: Annotated[int, Field(gt=0)]
+
+
+class TargetWindowConfig(BaseModel):
+    enabled: bool = True
+    executable_path: str = ""
+    window_title: str = ""
+    reference_client_rect: TargetRectModel
+    layout_policy: Literal["maximize_then_scale"] = "maximize_then_scale"
+    focus_policy: Literal["require_foreground"] = "require_foreground"
+
+
 class BaseStep(BaseModel):
     id: str
     type: str
@@ -170,10 +186,11 @@ class AutomationProfile(BaseModel):
         Literal["click", "move", "drag", "wait", "pixel_check", "key_tap", "key_hold", "loop_start", "loop_end"],
         str,
     ] = Field(default_factory=dict)
+    target: TargetWindowConfig | None = None
 
 
 class ProfileExport(BaseModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 2
     exported_by: str = ProductName
     profile: AutomationProfile
     app_settings: dict[str, Any] = Field(default_factory=dict)
@@ -236,12 +253,20 @@ class RuntimeState(BaseModel):
     current_step_state: Optional[str] = None
 
 
-class InputBrokerState(BaseModel):
-    supported: bool
-    connected: bool = False
-    elevated: bool = False
-    status: str = "local"
-    last_error: Optional[str] = None
+class TargetRuntimeState(BaseModel):
+    configured: bool = False
+    resolved: bool = False
+    hwnd: int | None = None
+    pid: int | None = None
+    executable_path: str = ""
+    window_title: str = ""
+    foreground: bool = False
+    elevated: bool | None = None
+    current_client_rect: TargetRectModel | None = None
+    scale_x: float = 1.0
+    scale_y: float = 1.0
+    pixel_checks_stale: bool = False
+    warning: str | None = None
 
 
 class RuntimeInfo(BaseModel):
@@ -249,7 +274,8 @@ class RuntimeInfo(BaseModel):
     pid: int
     elevated: bool
     dpi_awareness: str
-    input_broker: InputBrokerState
+    input_driver: dict[str, Any]
+    target: TargetRuntimeState
 
 
 class BrokerEvent(BaseModel):

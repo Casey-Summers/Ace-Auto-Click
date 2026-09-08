@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-import pyautogui
 from fastapi import HTTPException
+from ace_auto_click.automation.input_driver import current_cursor_position
 
 from ace_auto_click.api.models import (
     ActionStepModel,
@@ -21,6 +21,7 @@ from ace_auto_click.api.models import (
 )
 from ace_auto_click.automation.actions import ClickStep, DragStep, KeyHoldStep, KeyTapStep, MoveStep, PixelCheckStep, WaitStep
 from ace_auto_click.automation.engine import SequenceTimelineNode
+from ace_auto_click.automation.target_runtime import TargetRuntime
 
 
 def sequence_for_run(settings: AppSettings) -> tuple[list[ActionStepModel], int]:
@@ -31,7 +32,8 @@ def sequence_for_run(settings: AppSettings) -> tuple[list[ActionStepModel], int]
         loops = 0 if profile.loops_infinite else max(1, profile.loops_count or 1)
         return profile.steps, loops
     normal = profile.normal
-    x, y = pyautogui.position() if normal.use_current_mouse else (0, 0)
+    point = current_cursor_position() if normal.use_current_mouse else None
+    x, y = (point.x, point.y) if point else (0, 0)
     return [
         ClickStepModel(
             id="normal-click",
@@ -55,6 +57,26 @@ def active_profile(settings: AppSettings) -> AutomationProfile | None:
         ),
         settings.profiles[0] if settings.profiles else None,
     )
+
+
+def prepare_steps_for_target(settings: AppSettings, steps: list[ActionStepModel], runtime: TargetRuntime) -> list[ActionStepModel]:
+    profile = active_profile(settings)
+    config = profile.target if profile else None
+    if not config:
+        return steps
+    status = runtime.status(settings, restore=True, require_focus=True)
+    if not status.get("resolved"):
+        raise HTTPException(status_code=409, detail={"code": "target_missing", "message": status.get("warning")})
+    if status.get("pixel_checks_stale") and any(isinstance(step, PixelCheckStepModel) for step in steps):
+        raise HTTPException(status_code=409, detail={"code": "pixel_checks_stale", "message": status.get("warning")})
+    output: list[ActionStepModel] = []
+    for step in steps:
+        if isinstance(step, (ClickStepModel, MoveStepModel, DragStepModel, PixelCheckStepModel)):
+            x, y = runtime.transform(config, (step.x, step.y), status)
+            output.append(step.model_copy(update={"x": x, "y": y}))
+        else:
+            output.append(step)
+    return output
 
 
 def loop_iterations(step: LoopStartStepModel, infinite_cap: int | None = None) -> int:

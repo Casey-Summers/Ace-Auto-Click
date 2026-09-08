@@ -7,14 +7,8 @@ from dataclasses import dataclass
 from collections import deque
 from typing import Any, Callable, Dict, List, Optional
 
-import pyautogui
-from pynput import keyboard, mouse
-# Optimize pyautogui without disabling the emergency corner failsafe.
-pyautogui.PAUSE = 0
-pyautogui.FAILSAFE = True
-
 from ace_auto_click.automation.actions import ActionStep
-from ace_auto_click.automation.input_backend import InputBackend, LocalInputBackend
+from ace_auto_click.automation.input_driver import InputDriver, Point, Win32InputDriver
 from ace_auto_click.automation.pixels import PixelCondition, should_run_clicking
 
 StatusCb = Callable[[str], None]
@@ -48,15 +42,13 @@ class _LoopFrame:
 
 
 class ClickEngine:
-    def __init__(self, on_status: Optional[StatusCb] = None, input_backend: InputBackend | None = None) -> None:
+    def __init__(self, on_status: Optional[StatusCb] = None, input_driver: InputDriver | None = None) -> None:
         self._on_status = on_status or (lambda _: None)
         self._stop_evt = threading.Event()
         self._active_thread: Optional[threading.Thread] = None
 
-        self._input_backend = input_backend or LocalInputBackend()
-        self._mouse_ctl = self._input_backend.mouse
-        self._kb_ctl = self._input_backend.keyboard
-        self.side_buttons_supported = hasattr(mouse.Button, "x1") and hasattr(mouse.Button, "x2")
+        self.input = input_driver or Win32InputDriver()
+        self.side_buttons_supported = True
         self.current_step_id: str | None = None
         self.current_step_state: str | None = None
         self._execution_events: deque[dict[str, Any]] = deque(maxlen=512)
@@ -65,18 +57,38 @@ class ClickEngine:
         self._execution_lock = threading.Lock()
         self._held_keys: set[Any] = set()
         self._exit_current_loop_requested = False
+        self.execution_context: dict[str, Any] = {}
 
-    def set_input_backend(self, input_backend: InputBackend) -> None:
-        if self.is_running():
-            raise RuntimeError("Stop the active automation before changing the input service.")
-        previous = self._input_backend
-        self._input_backend = input_backend
-        self._mouse_ctl = input_backend.mouse
-        self._kb_ctl = input_backend.keyboard
-        if previous is not input_backend:
-            previous.close()
+    @property
+    def cursor_position(self) -> tuple[int, int]:
+        point = self.input.cursor_position
+        return point.x, point.y
+
+    def move_cursor(self, value: tuple[int, int]) -> None:
+        self.input.move(Point(int(value[0]), int(value[1])))
+
+    def click_mouse(self, button: object, count: int = 1) -> None:
+        self.input.click(button, count)
+
+    def mouse_down(self, button: object) -> None:
+        self.input.mouse_down(button)
+
+    def mouse_up(self, button: object) -> None:
+        self.input.mouse_up(button)
+
+    def key_down(self, key: object) -> None:
+        self.input.key_down(key)
+
+    def key_up(self, key: object) -> None:
+        self.input.key_up(key)
+
+    def tap_key(self, key: object) -> None:
+        self.input.tap(key)
 
     def emit_execution_event(self, step_id: str, step_type: str, phase: str, details: dict[str, Any] | None = None) -> None:
+        event_details = dict(details or {})
+        if phase == "step_execute" and self.execution_context:
+            event_details.setdefault("target", self.execution_context)
         with self._execution_lock:
             self._execution_seq += 1
             self._execution_events.append({
@@ -86,7 +98,7 @@ class ClickEngine:
                 "run_id": self._execution_run_id,
                 "sequence_no": self._execution_seq,
                 "ts_ms": int(time.time() * 1000),
-                "details": details,
+                "details": event_details or None,
             })
 
     def _begin_execution_run(self) -> int:
@@ -105,6 +117,7 @@ class ClickEngine:
         """Stops the current thread without blocking the UI."""
         self._stop_evt.set()
         self._release_held_keys()
+        self.input.release_all()
 
     def _register_held_key(self, key: Any) -> None:
         self._held_keys.add(key)
@@ -115,7 +128,7 @@ class ClickEngine:
     def _release_held_keys(self) -> None:
         for key in list(self._held_keys):
             try:
-                self._kb_ctl.release(key)
+                self.input.key_up(key)
             except Exception:
                 pass
             finally:
@@ -156,7 +169,7 @@ class ClickEngine:
                         break
 
                     if settings.key_to_tap:
-                        self._kb_ctl.tap(settings.key_to_tap)
+                        self.input.tap(settings.key_to_tap)
                     else:
                         x, y = settings.x, settings.y
                         ro = max(0, int(settings.random_offset_px))
@@ -165,14 +178,14 @@ class ClickEngine:
                             y += random.randint(-ro, ro)
 
                         btn_str = settings.button.lower().strip()
-                        btn = mouse.Button.left
+                        btn = "left"
                         if "right" in btn_str:
-                            btn = mouse.Button.right
+                            btn = "right"
                         elif "middle" in btn_str:
-                            btn = mouse.Button.middle
+                            btn = "middle"
 
-                        self._mouse_ctl.position = (x, y)
-                        self._mouse_ctl.click(btn)
+                        self.input.move(Point(x, y))
+                        self.input.click(btn)
 
             except Exception as e:
                 self._on_status(f"Error: {e}")
@@ -362,24 +375,24 @@ class ClickEngine:
             btn = self._parse_button(str(ev.get("button", "Button.left")))
             pressed = bool(ev.get("pressed", True))
             if pressed:
-                self._mouse_ctl.position = (x, y)
-                self._mouse_ctl.press(btn)
+                self.input.move(Point(x, y))
+                self.input.mouse_down(btn)
             else:
-                self._mouse_ctl.release(btn)
+                self.input.mouse_up(btn)
         elif et in ("key_press", "key_release"):
             k = self._parse_key(str(ev.get("key", "")))
             if k:
                 if et == "key_press":
-                    self._kb_ctl.press(k)
+                    self.input.key_down(k)
                 else:
-                    self._kb_ctl.release(k)
+                    self.input.key_up(k)
 
-    def _parse_button(self, s: str) -> mouse.Button:
+    def _parse_button(self, s: str) -> str:
         if "right" in s:
-            return mouse.Button.right
+            return "right"
         if "middle" in s:
-            return mouse.Button.middle
-        return mouse.Button.left
+            return "middle"
+        return "left"
 
     def _parse_key(self, s: str):
         if s.startswith("char:") and len(s) >= 6:
@@ -388,5 +401,5 @@ class ClickEngine:
             name = s[4:]
             if "Key." in name:
                 attr = name.split("Key.", 1)[1].strip()
-                return getattr(keyboard.Key, attr, None)
+                return attr
         return None

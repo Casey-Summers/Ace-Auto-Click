@@ -9,6 +9,7 @@ import json
 import time
 import uuid
 import socket
+import threading
 from pathlib import Path
 from shutil import which
 
@@ -19,7 +20,25 @@ MIN_PYTHON = (3, 12)
 CARGO_TARGET_ENV = "CARGO_TARGET_DIR"
 
 
-def run_api(host: str = "127.0.0.1", port: int = 8765) -> None:
+_active_server = None
+
+
+def request_api_shutdown() -> None:
+    if _active_server is not None:
+        _active_server.should_exit = True
+
+
+def _wait_for_process_exit(pid: int) -> None:
+    if sys.platform != "win32" or pid <= 0: return
+    import ctypes
+    handle = ctypes.windll.kernel32.OpenProcess(0x00100000, False, pid)
+    if handle:
+        try: ctypes.windll.kernel32.WaitForSingleObject(handle, 30000)
+        finally: ctypes.windll.kernel32.CloseHandle(handle)
+
+
+def run_api(host: str = "127.0.0.1", port: int = 8765, replace_pid: int = 0,
+            instance_id: str | None = None, lease_required: bool = False) -> None:
     try:
         import uvicorn
     except ImportError as exc:
@@ -27,7 +46,15 @@ def run_api(host: str = "127.0.0.1", port: int = 8765) -> None:
             "Missing API dependencies. Run: python -m pip install -r requirements.txt"
         ) from exc
 
-    uvicorn.run("ace_auto_click.api.app:app", host=host, port=port, reload=False)
+    if instance_id: os.environ["ACE_BACKEND_INSTANCE_ID"] = instance_id
+    if lease_required: os.environ["ACE_LEASE_REQUIRED"] = "1"
+    _wait_for_process_exit(replace_pid)
+    global _active_server
+    _active_server = uvicorn.Server(uvicorn.Config("ace_auto_click.api.app:app", host=host, port=port, reload=False))
+    from ace_auto_click.runtime.lease import start_monitor
+    start_monitor(request_api_shutdown)
+    _active_server.run()
+    _active_server = None
 
 
 def run_desktop_dev() -> None:

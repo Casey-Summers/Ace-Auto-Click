@@ -9,7 +9,7 @@ if sys.platform == "win32":
     user32 = ctypes.windll.user32
     gdi32 = ctypes.windll.gdi32
 else:
-    import pyautogui
+    from PIL import ImageGrab
 
 @dataclass(frozen=True)
 class PixelCondition:
@@ -44,7 +44,7 @@ def get_pixel_rgb(x: int, y: int) -> Tuple[int, int, int]:
         b = (pixel >> 16) & 0xFF
         return (r, g, b)
     else:
-        r, g, b = pyautogui.pixel(x, y)
+        r, g, b = ImageGrab.grab(bbox=(x, y, x + 1, y + 1)).getpixel((0, 0))[:3]
         return (_clamp(int(r)), _clamp(int(g)), _clamp(int(b)))
 
 

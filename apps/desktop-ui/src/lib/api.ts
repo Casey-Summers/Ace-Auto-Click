@@ -22,8 +22,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   getState: () => request<RuntimeState>("/state"),
   runtimeInfo: () => request<RuntimeInfo>("/runtime/info"),
-  startElevatedInput: () => request<RuntimeInfo>("/runtime/input-broker/start", { method: "POST" }),
-  stopElevatedInput: () => request<RuntimeInfo>("/runtime/input-broker/stop", { method: "POST" }),
+  requestElevation: () => request<{ status: string; next_instance_id: string }>("/runtime/elevation/request", { method: "POST" }),
+  renewLease: () => request<{ instance_id: string }>("/runtime/lease", { method: "POST" }),
+  bindTarget: () => request<AppSettings>("/target/bind-next-click", { method: "POST" }),
+  restoreTarget: () => request<RuntimeInfo["target"]>("/target/restore-reference", { method: "POST" }),
   executionEvents: (after = 0) => request<ExecutionEvent[]>(`/execution-events?after=${after}`),
   getSettings: () => request<AppSettings>("/settings"),
   saveSettings: (settings: AppSettings) =>

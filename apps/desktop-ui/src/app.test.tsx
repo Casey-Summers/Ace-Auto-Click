@@ -11,8 +11,10 @@ const apiMock = vi.hoisted(() => ({
   getSettings: vi.fn(),
   getState: vi.fn(),
   runtimeInfo: vi.fn(),
-  startElevatedInput: vi.fn(),
-  stopElevatedInput: vi.fn(),
+  requestElevation: vi.fn(),
+  renewLease: vi.fn(),
+  bindTarget: vi.fn(),
+  restoreTarget: vi.fn(),
   executionEvents: vi.fn(),
   runToggle: vi.fn(),
   stop: vi.fn(),
@@ -210,15 +212,12 @@ describe("App", () => {
       pid: 1234,
       elevated: false,
       dpi_awareness: "per-monitor-v2",
-      input_broker: { supported: true, connected: false, elevated: false, status: "local", last_error: null }
+      input_driver: { driver: "win32-sendinput", checked: true },
+      target: { configured: false, resolved: false }
     });
-    apiMock.startElevatedInput.mockResolvedValue({
-      instance_id: "test-instance",
-      pid: 1234,
-      elevated: false,
-      dpi_awareness: "per-monitor-v2",
-      input_broker: { supported: true, connected: true, elevated: true, status: "ready", last_error: null }
-    });
+    apiMock.renewLease.mockResolvedValue({ instance_id: "test-instance" });
+    apiMock.bindTarget.mockResolvedValue(defaultSettings);
+    apiMock.restoreTarget.mockResolvedValue({ configured: false, resolved: false });
 
     render(<App />);
 

@@ -30,14 +30,13 @@ export type RuntimeInfo = {
   pid: number;
   elevated: boolean;
   dpi_awareness: string;
-  input_broker: {
-    supported: boolean;
-    connected: boolean;
-    elevated: boolean;
-    status: string;
-    last_error: string | null;
-  };
+  input_driver: { driver: string; checked: boolean; last_dispatch?: { submitted: number; inserted: number } | null };
+  target: TargetRuntimeState;
 };
+
+export type TargetRect = { left: number; top: number; width: number; height: number };
+export type TargetWindowConfig = { enabled: boolean; executable_path: string; window_title: string; reference_client_rect: TargetRect; layout_policy: "maximize_then_scale"; focus_policy: "require_foreground" };
+export type TargetRuntimeState = { configured: boolean; resolved: boolean; hwnd?: number | null; pid?: number | null; executable_path?: string; window_title?: string; foreground?: boolean; elevated?: boolean | null; current_client_rect?: TargetRect | null; scale_x?: number; scale_y?: number; pixel_checks_stale?: boolean; warning?: string | null };
 
 export type Point = {
   x: number;
@@ -214,6 +213,7 @@ export type AutomationProfile = {
   loops_count: number;
   loops_infinite: boolean;
   action_icon_colors?: Partial<Record<ActionIconType, string>>;
+  target?: TargetWindowConfig | null;
 };
 
 export type PixelSample = {

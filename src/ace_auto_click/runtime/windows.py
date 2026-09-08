@@ -45,6 +45,23 @@ def is_process_elevated() -> bool:
         return False
 
 
+def process_is_elevated(pid: int) -> bool | None:
+    if sys.platform != "win32": return False
+    process = ctypes.windll.kernel32.OpenProcess(0x1000, False, int(pid))
+    if not process: return None
+    token = ctypes.c_void_p()
+    try:
+        if not ctypes.windll.advapi32.OpenProcessToken(process, 0x0008, ctypes.byref(token)):
+            return None
+        elevation = ctypes.c_ulong(); size = ctypes.c_ulong()
+        if not ctypes.windll.advapi32.GetTokenInformation(token, 20, ctypes.byref(elevation), ctypes.sizeof(elevation), ctypes.byref(size)):
+            return None
+        return bool(elevation.value)
+    finally:
+        if token.value: ctypes.windll.kernel32.CloseHandle(token)
+        ctypes.windll.kernel32.CloseHandle(process)
+
+
 def process_identity() -> dict[str, object]:
     return {
         "pid": os.getpid(),

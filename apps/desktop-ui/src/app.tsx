@@ -46,8 +46,9 @@ export function App() {
     executionEvents,
     runtimeInfo,
     inputServiceBusy,
-    startElevatedInput,
-    stopElevatedInput,
+    requestElevation,
+    bindTarget,
+    restoreTarget,
     samplePixel,
     samplingPixelStepId,
     saveDialogOpen,
@@ -67,7 +68,8 @@ export function App() {
     state,
     setMode
   } = controller;
-  const elevatedInput = Boolean(runtimeInfo?.elevated || runtimeInfo?.input_broker.connected);
+  const elevatedInput = Boolean(runtimeInfo?.elevated);
+  const dispatchBlocked = Boolean(runtimeInfo?.input_driver.last_dispatch && runtimeInfo.input_driver.last_dispatch.inserted < runtimeInfo.input_driver.last_dispatch.submitted);
 
   const header = (
     <header className="mb-4 flex items-center justify-between">
@@ -110,16 +112,17 @@ export function App() {
       <div className="flex items-center gap-2">
         <ShieldCheck size={15} className={elevatedInput ? "text-success" : "text-warning"} />
         <span>
-          Input: {elevatedInput ? "elevated service" : "local service"}
+          Input: {elevatedInput ? "administrator backend" : "standard backend"}
           {runtimeInfo ? ` · DPI ${runtimeInfo.dpi_awareness} · PID ${runtimeInfo.pid}` : " · checking runtime"}
-          {runtimeInfo?.input_broker.last_error ? ` · ${runtimeInfo.input_broker.last_error}` : ""}
+          {runtimeInfo?.target?.configured ? ` · Target: ${runtimeInfo.target.window_title || "unavailable"}` : " · No target bound"}
+          {runtimeInfo?.target?.warning ? ` · ${runtimeInfo.target.warning}` : ""}
         </span>
       </div>
-      {runtimeInfo?.input_broker.supported && (!runtimeInfo.elevated || runtimeInfo.input_broker.connected) ? (
-        <Button size="sm" variant={runtimeInfo.input_broker.connected ? "ghost" : "default"} disabled={inputServiceBusy || state.running} onClick={runtimeInfo.input_broker.connected ? stopElevatedInput : startElevatedInput}>
-          {inputServiceBusy ? "Working…" : runtimeInfo.input_broker.connected ? "Use local input" : "Restart input as administrator"}
-        </Button>
-      ) : null}
+      <div className="flex gap-2">
+        <Button size="sm" variant="ghost" disabled={state.running} onClick={bindTarget}>{runtimeInfo?.target?.configured ? "Rebind target" : "Bind target"}</Button>
+        {runtimeInfo?.target?.configured ? <Button size="sm" variant="ghost" disabled={state.running} onClick={restoreTarget}>Restore fullscreen</Button> : null}
+        {!elevatedInput && (runtimeInfo?.target?.elevated || dispatchBlocked) ? <Button size="sm" disabled={inputServiceBusy || state.running} onClick={requestElevation}>{inputServiceBusy ? "Restarting…" : "Restart as administrator"}</Button> : null}
+      </div>
     </div><ProfileManager
       activeProfile={activeProfile}
       saving={profileSaving}

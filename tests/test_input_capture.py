@@ -132,7 +132,7 @@ def test_windows_polling_capture_records_click_transition(monkeypatch: pytest.Mo
         return values.pop(0) if len(values) > 1 else values[0]
 
     monkeypatch.setattr(input_capture, "_get_async_key_state", fake_key_state)
-    monkeypatch.setattr(input_capture.pyautogui, "position", lambda: (321, 654))
+    monkeypatch.setattr(input_capture, "current_cursor_position", lambda: input_capture.Point(321, 654))
 
     captured = input_capture._poll_windows_mouse_click(timeout_s=0.5, cancel_keys={"esc"})
 

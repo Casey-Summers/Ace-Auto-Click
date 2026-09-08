@@ -7,8 +7,8 @@ import os
 import ctypes
 from dataclasses import dataclass
 
-import pyautogui
 from pynput import keyboard, mouse
+from ace_auto_click.automation.input_driver import Point, current_cursor_position
 
 from ace_auto_click.automation.keybinds import (
     format_keybind,
@@ -144,8 +144,8 @@ def _poll_windows_mouse_click(
         for vk_code, button_name in buttons:
             down = _button_down(vk_code)
             if time.monotonic() >= armed_at and down:
-                x, y = pyautogui.position()
-                return CapturedInput(kind="mouse_click", x=int(x), y=int(y), button=button_name)
+                point = current_cursor_position()
+                return CapturedInput(kind="mouse_click", x=point.x, y=point.y, button=button_name)
             was_down[vk_code] = down
 
         time.sleep(0.01)

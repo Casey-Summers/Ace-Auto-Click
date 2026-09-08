@@ -4,7 +4,7 @@ from ace_auto_click.api.models import RuntimeState
 from ace_auto_click.automation.engine import ClickEngine
 from ace_auto_click.automation.hotkeys import RuntimeHotkeyManager
 from ace_auto_click.automation.recorder import ActionRecorder
-from ace_auto_click.runtime.broker_manager import InputBrokerManager
+from ace_auto_click.automation.target_runtime import TargetRuntime
 
 _status = "Idle"
 _last_error: str | None = None
@@ -44,4 +44,4 @@ hotkeys = RuntimeHotkeyManager(
     on_emergency_stop=trigger_emergency_stop,
     on_run_toggle=lambda: state(),
 )
-input_broker = InputBrokerManager(engine, hotkeys)
+target_runtime = TargetRuntime()

@@ -23,7 +23,6 @@ UI_DIR = ROOT / "apps" / "desktop-ui"
 TAURI_DIR = UI_DIR / "src-tauri"
 DEFAULT_LOG_DIR = ROOT / "logs" / "dependency-doctor"
 PYTHON_IMPORTS = {
-    "pyautogui": "pyautogui",
     "pynput": "pynput",
     "Pillow": "PIL",
     "fastapi": "fastapi",

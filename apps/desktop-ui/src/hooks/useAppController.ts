@@ -126,32 +126,52 @@ export function useAppController() {
     void refreshProfiles();
   }, []);
 
-  const startElevatedInput = async () => {
+  const requestElevation = async () => {
     setInputServiceBusy(true);
     try {
-      const next = await api.startElevatedInput();
-      setRuntimeInfo(next);
-      setLog((items) => ["Elevated input service connected.", ...items]);
+      const restart = await api.requestElevation();
+      const deadline = Date.now() + 30000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 300));
+        try {
+          const next = await api.runtimeInfo();
+          if (next.instance_id === restart.next_instance_id && next.elevated) {
+            setRuntimeInfo(next);
+            setLog((items) => ["Backend restarted with administrator input access.", ...items]);
+            return;
+          }
+        } catch { /* backend is replacing itself */ }
+      }
+      throw new Error("Timed out waiting for the elevated backend.");
     } catch (error) {
-      setLog((items) => [`Elevated input service failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
+      setLog((items) => [`Backend elevation failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
       api.runtimeInfo().then(setRuntimeInfo).catch(() => undefined);
     } finally {
       setInputServiceBusy(false);
     }
   };
 
-  const stopElevatedInput = async () => {
-    setInputServiceBusy(true);
+  const bindTarget = async () => {
     try {
-      const next = await api.stopElevatedInput();
-      setRuntimeInfo(next);
-      setLog((items) => ["Using the local input service.", ...items]);
+      setLog((items) => ["Click the target application window to bind it.", ...items]);
+      const next = await api.bindTarget();
+      setSettings(normalizeSettings(next));
+      setRuntimeInfo(await api.runtimeInfo());
+      setLog((items) => ["Target bound and fullscreen reference recorded.", ...items]);
     } catch (error) {
-      setLog((items) => [`Input service stop failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
-    } finally {
-      setInputServiceBusy(false);
+      setLog((items) => [`Target binding failed: ${error instanceof Error ? error.message : String(error)}`, ...items]);
     }
   };
+
+  const restoreTarget = async () => {
+    try { await api.restoreTarget(); setRuntimeInfo(await api.runtimeInfo()); }
+    catch (error) { setLog((items) => [`Target restore failed: ${error instanceof Error ? error.message : String(error)}`, ...items]); }
+  };
+
+  useEffect(() => {
+    const leaseTimer = window.setInterval(() => api.renewLease().catch(() => undefined), 2000);
+    return () => window.clearInterval(leaseTimer);
+  }, []);
 
   useEffect(() => {
     const intervalMs = state.running ? 120 : 1200;
@@ -714,8 +734,9 @@ export function useAppController() {
     executionEvents,
     runtimeInfo,
     inputServiceBusy,
-    startElevatedInput,
-    stopElevatedInput,
+    requestElevation,
+    bindTarget,
+    restoreTarget,
     setFocusEmergency,
     setFocusKeybind,
     setMode,
