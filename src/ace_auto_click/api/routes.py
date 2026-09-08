@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-import pyautogui
 from fastapi import APIRouter, HTTPException
+from ace_auto_click.automation.input_driver import Point, current_cursor_position
 
 from ace_auto_click.api.models import (
     AppSettings,
@@ -15,11 +15,12 @@ from ace_auto_click.api.models import (
     ProfileDirectoryStatus,
     ProfileFile,
     RuntimeState,
+    RuntimeInfo,
     SequenceRunRequest,
     SimpleRunRequest,
 )
-from ace_auto_click.api.runtime_state import engine, hotkeys, recorder, set_status, state, trigger_emergency_stop
-from ace_auto_click.api.sequence_service import active_profile, compile_sequence_timeline, sequence_for_run
+from ace_auto_click.api.runtime_state import engine, hotkeys, recorder, set_status, state, target_runtime, trigger_emergency_stop
+from ace_auto_click.api.sequence_service import active_profile, compile_sequence_timeline, prepare_steps_for_target, sequence_for_run
 from ace_auto_click.api.settings_service import load_app_settings, save_app_settings
 from ace_auto_click.automation.engine import ClickSettings
 from ace_auto_click.automation import input_capture
@@ -32,8 +33,16 @@ from ace_auto_click.storage.profiles import (
     profile_directory_status,
     save_profile_export,
 )
+from ace_auto_click.runtime.windows import process_identity
+import os
+import uuid
+import threading
+from ace_auto_click.runtime.elevation import request_elevated_replacement
+from ace_auto_click.runtime.lease import renew as renew_lease
+from ace_auto_click.runtime.service import request_api_shutdown
 
 router = APIRouter()
+INSTANCE_ID = os.environ.get("ACE_BACKEND_INSTANCE_ID") or str(uuid.uuid4())
 
 
 def bind_runtime_hotkeys(settings: AppSettings | None = None) -> None:
@@ -54,6 +63,8 @@ def trigger_run_toggle() -> RuntimeState:
     if not steps:
         set_status("Error: no active profile sequence")
         return state()
+    steps = prepare_steps_for_target(settings, steps, target_runtime)
+    engine.execution_context = target_runtime.status(settings)
     engine.start_sequence_timeline(compile_sequence_timeline(steps), loops=loops)
     return state()
 
@@ -63,7 +74,67 @@ hotkeys.set_run_toggle_handler(trigger_run_toggle)
 
 @router.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "product": ProductName}
+    return {"status": "ok", "product": ProductName, "instance_id": INSTANCE_ID}
+
+
+@router.get("/runtime/info", response_model=RuntimeInfo)
+def runtime_info() -> RuntimeInfo:
+    identity = process_identity()
+    return RuntimeInfo(
+        instance_id=INSTANCE_ID,
+        pid=int(identity["pid"]),
+        elevated=bool(identity["elevated"]),
+        dpi_awareness=str(identity["dpi_awareness"]),
+        input_driver=engine.input.diagnostics(),
+        target=target_runtime.status(load_app_settings()),
+    )
+
+
+@router.get("/target/status")
+def target_status() -> dict[str, Any]:
+    return target_runtime.status(load_app_settings())
+
+
+@router.post("/target/restore-reference")
+def restore_target_reference() -> dict[str, Any]:
+    return target_runtime.status(load_app_settings(), restore=True)
+
+
+@router.post("/target/bind-next-click", response_model=AppSettings)
+def bind_target_next_click() -> AppSettings:
+    captured = input_capture.capture_next_mouse_click(timeout_s=30, cancel_keys={"esc"})
+    if captured.x is None or captured.y is None:
+        raise HTTPException(status_code=400, detail="Target capture did not return a point.")
+    settings = load_app_settings()
+    profile = active_profile(settings)
+    if profile is None:
+        raise HTTPException(status_code=400, detail="No active profile.")
+    profile.target = target_runtime.bind_at(settings, Point(captured.x, captured.y))
+    save_app_settings(settings)
+    return settings
+
+
+@router.post("/runtime/input-diagnostic")
+def input_diagnostic() -> dict[str, Any]:
+    settings = load_app_settings()
+    return {"runtime": runtime_info().model_dump(), "target": target_runtime.status(settings, restore=False, require_focus=False)}
+
+
+@router.post("/runtime/lease")
+def runtime_lease() -> dict[str, Any]:
+    return {"renewed_at": renew_lease(), "instance_id": INSTANCE_ID}
+
+
+@router.post("/runtime/elevation/request", status_code=202)
+def request_elevation() -> dict[str, str]:
+    if engine.is_running():
+        raise HTTPException(status_code=409, detail="Stop automation before elevating the backend.")
+    try:
+        next_instance_id = request_elevated_replacement()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    threading.Timer(0.5, request_api_shutdown).start()
+    return {"status": "restarting", "next_instance_id": next_instance_id}
 
 
 @router.get("/bootstrap", response_model=BootstrapData)
@@ -120,7 +191,10 @@ def run_sequence(request: SequenceRunRequest) -> CommandResult:
     if not request.steps:
         raise HTTPException(status_code=400, detail="Sequence must include at least one step.")
     loops = 0 if request.loops_infinite else max(1, request.loops_count)
-    engine.start_sequence_timeline(compile_sequence_timeline(request.steps), loops=loops)
+    settings = load_app_settings()
+    steps = prepare_steps_for_target(settings, request.steps, target_runtime)
+    engine.execution_context = target_runtime.status(settings)
+    engine.start_sequence_timeline(compile_sequence_timeline(steps), loops=loops)
     return CommandResult(state=state(), message="Sequence run started.")
 
 
@@ -200,8 +274,8 @@ def open_profile_folder() -> dict[str, str]:
 
 @router.get("/mouse-position")
 def mouse_position() -> dict[str, int]:
-    x, y = pyautogui.position()
-    return {"x": int(x), "y": int(y)}
+    point = current_cursor_position()
+    return {"x": point.x, "y": point.y}
 
 
 @router.post("/mouse-position/next-click")
@@ -220,10 +294,19 @@ def next_click_position() -> dict[str, int]:
 def _capture_snapshot_payload(snapshot: input_capture.CaptureSessionSnapshot) -> dict[str, Any]:
     payload: dict[str, Any] = {"id": snapshot.id, "status": snapshot.status, "error": snapshot.error}
     if snapshot.result is not None:
+        x, y = snapshot.result.x, snapshot.result.y
+        if snapshot.result.kind == "mouse_click" and x is not None and y is not None:
+            settings = load_app_settings(); profile = active_profile(settings)
+            if profile and profile.target:
+                try:
+                    target_state = target_runtime.status(settings)
+                    x, y = target_runtime.reverse_transform(profile.target, (x, y), target_state)
+                except Exception:
+                    pass
         payload["result"] = {
             "kind": snapshot.result.kind,
-            "x": snapshot.result.x,
-            "y": snapshot.result.y,
+            "x": x,
+            "y": y,
             "button": snapshot.result.button,
             "key": snapshot.result.key,
             "cancelled": snapshot.result.cancelled,
@@ -267,7 +350,12 @@ def cancel_input_capture(session_id: str) -> dict[str, Any]:
 
 @router.get("/pixel", response_model=PixelSample)
 def pixel(x: int, y: int) -> PixelSample:
-    return PixelSample(x=x, y=y, rgb=get_pixel_rgb(x, y))
+    settings = load_app_settings(); profile = active_profile(settings)
+    sample_x, sample_y = x, y
+    if profile and profile.target:
+        target_state = target_runtime.status(settings, restore=True)
+        sample_x, sample_y = target_runtime.transform(profile.target, (x, y), target_state)
+    return PixelSample(x=x, y=y, rgb=get_pixel_rgb(sample_x, sample_y))
 
 
 @router.post("/record/start", response_model=CommandResult)
@@ -295,5 +383,6 @@ def startup() -> None:
 
 
 def shutdown() -> None:
+    engine.stop()
     hotkeys.stop()
     input_capture.capture_manager.cancel_pending("Application shutting down.")

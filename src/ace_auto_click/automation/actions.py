@@ -2,13 +2,9 @@ from __future__ import annotations
 
 import time
 import random
-import ctypes
 import math
 from dataclasses import dataclass
 from typing import Any, Literal, Tuple
-
-import pyautogui
-from pynput import keyboard, mouse
 
 from ace_auto_click.automation.pixels import get_pixel_rgb, rgb_close
 from ace_auto_click.automation.keybinds import normalize_side_button, parse_keybind_text
@@ -54,6 +50,7 @@ class ActionStep:
 
             try:
                 self._validate(engine)
+                self._prepare_execution_details(engine)
                 if hasattr(engine, "current_step_state"):
                     engine.current_step_state = "running"
                 if hasattr(engine, "emit_execution_event"):
@@ -76,6 +73,9 @@ class ActionStep:
         raise NotImplementedError
 
     def _validate(self, engine: Any) -> None:
+        return None
+
+    def _prepare_execution_details(self, engine: Any) -> None:
         return None
 
     def _report_dispatch_failure(self, engine: Any, message: str) -> None:
@@ -103,15 +103,14 @@ class ClickStep(PointerTargetStep):
     clicks: int = 1
 
     def _run(self, engine: Any) -> bool:
-        btn = mouse.Button.left
+        btn = "left"
         if "right" in self.button:
-            btn = mouse.Button.right
+            btn = "right"
         elif "middle" in self.button:
-            btn = mouse.Button.middle
+            btn = "middle"
 
-        engine._mouse_ctl.position = self.target_position()
-        for _ in range(self.clicks):
-            engine._mouse_ctl.click(btn)
+        engine.move_cursor(self.target_position())
+        engine.click_mouse(btn, self.clicks)
         return True
 
 
@@ -137,16 +136,16 @@ class MoveStep(PointerTargetStep):
             return self._run_smooth(engine)
         if self.movement_mode == "natural":
             return self._run_natural(engine)
-        engine._mouse_ctl.position = self.target_position()
+        engine.move_cursor(self.target_position())
         return True
 
     def _run_smooth(self, engine: Any) -> bool:
-        start = engine._mouse_ctl.position
+        start = engine.cursor_position
         start_x, start_y = (int(start[0]), int(start[1])) if start is not None else (self.x, self.y)
         end_x, end_y = int(self.x), int(self.y)
         distance = ((end_x - start_x) ** 2 + (end_y - start_y) ** 2) ** 0.5
         if distance == 0:
-            engine._mouse_ctl.position = (end_x, end_y)
+            engine.move_cursor((end_x, end_y))
             return True
 
         duration_ms = int(self.movement_duration_ms)
@@ -179,7 +178,7 @@ class MoveStep(PointerTargetStep):
             inv_t = 1.0 - t
             x = (inv_t * inv_t * start_x) + (2 * inv_t * t * control_x) + (t * t * end_x)
             y = (inv_t * inv_t * start_y) + (2 * inv_t * t * control_y) + (t * t * end_y)
-            engine._mouse_ctl.position = (int(round(x)), int(round(y)))
+            engine.move_cursor((int(round(x)), int(round(y))))
             if duration_s > 0 and index < step_count:
                 target_elapsed = duration_s * linear_t
                 while time.perf_counter() - start_time < target_elapsed:
@@ -189,17 +188,17 @@ class MoveStep(PointerTargetStep):
 
         if engine._stop_evt.is_set():
             return False
-        engine._mouse_ctl.position = (end_x, end_y)
+        engine.move_cursor((end_x, end_y))
         return True
 
     def _run_natural(self, engine: Any) -> bool:
-        start = engine._mouse_ctl.position
+        start = engine.cursor_position
         start_x, start_y = (int(start[0]), int(start[1])) if start is not None else (self.x, self.y)
         end_x, end_y = int(self.x), int(self.y)
         dx, dy = end_x - start_x, end_y - start_y
         distance = ((dx * dx) + (dy * dy)) ** 0.5
         if distance == 0:
-            engine._mouse_ctl.position = (end_x, end_y)
+            engine.move_cursor((end_x, end_y))
             return True
 
         duration_ms = int(self.movement_duration_ms)
@@ -273,7 +272,7 @@ class MoveStep(PointerTargetStep):
             local_y = local_y_at(local_x)
             x = start_x + (ux * local_x) + (px * local_y)
             y = start_y + (uy * local_x) + (py * local_y)
-            engine._mouse_ctl.position = (int(round(x)), int(round(y)))
+            engine.move_cursor((int(round(x)), int(round(y))))
             if duration_s > 0 and index < step_count:
                 target_elapsed = duration_s * linear_t
                 while time.perf_counter() - start_time < target_elapsed:
@@ -283,7 +282,7 @@ class MoveStep(PointerTargetStep):
 
         if should_overshoot and overshoot_distance > 0:
             correction_steps = max(5, min(48, int(7 + (overshoot_distance * (1.4 + (1.9 * overshoot_severity))))))
-            correction_start = engine._mouse_ctl.position
+            correction_start = engine.cursor_position
             if correction_start is None:
                 correction_start = (
                     int(round(start_x + (ux * travel_distance))),
@@ -296,12 +295,12 @@ class MoveStep(PointerTargetStep):
                 eased = t * t * (3 - (2 * t))
                 x = correction_start[0] + ((end_x - correction_start[0]) * eased)
                 y = correction_start[1] + ((end_y - correction_start[1]) * eased)
-                engine._mouse_ctl.position = (int(round(x)), int(round(y)))
+                engine.move_cursor((int(round(x)), int(round(y))))
                 time.sleep(max(0.002, 0.005 - (0.0015 * overshoot_severity)))
 
         if engine._stop_evt.is_set():
             return False
-        engine._mouse_ctl.position = (end_x, end_y)
+        engine.move_cursor((end_x, end_y))
         return True
 
 
@@ -316,12 +315,12 @@ class DragStep(PointerTargetStep):
     release_delay_ms: int = 0
     button_order: list[str] | None = None
 
-    def _button(self, name: str) -> mouse.Button:
+    def _button(self, name: str) -> str:
         if "right" in name:
-            return mouse.Button.right
+            return "right"
         if "middle" in name:
-            return mouse.Button.middle
-        return mouse.Button.left
+            return "middle"
+        return "left"
 
     def _run(self, engine: Any) -> bool:
         start_x, start_y = self.target_position()
@@ -342,15 +341,13 @@ class DragStep(PointerTargetStep):
         acceleration = max(0.2, min(5.0, float(self.acceleration)))
         button_names = list(dict.fromkeys(self.button_order or self.buttons or ["left", "right"]))
         held_buttons = [self._button(name) for name in button_names]
-        if getattr(engine, "use_sendinput_mouse", False) and self._run_with_sendinput(engine, start_x, start_y, end_x, end_y, held_buttons, duration_s, step_count, acceleration):
-            return True
         return self._run_with_pynput_fallback(engine, start_x, start_y, end_x, end_y, held_buttons, duration_s, step_count, acceleration)
 
-    def _run_with_pynput_fallback(self, engine: Any, start_x: int, start_y: int, end_x: float, end_y: float, held_buttons: list[mouse.Button], duration_s: float, step_count: int, acceleration: float) -> bool:
-        engine._mouse_ctl.position = (start_x, start_y)
+    def _run_with_pynput_fallback(self, engine: Any, start_x: int, start_y: int, end_x: float, end_y: float, held_buttons: list[str], duration_s: float, step_count: int, acceleration: float) -> bool:
+        engine.move_cursor((start_x, start_y))
         try:
             for btn in held_buttons:
-                engine._mouse_ctl.press(btn)
+                engine.mouse_down(btn)
             if not self._sleep_with_stop(engine, max(0, self.hold_delay_ms) / 1000.0):
                 return False
             start_time = time.perf_counter()
@@ -359,10 +356,10 @@ class DragStep(PointerTargetStep):
                     return False
                 elapsed_ratio = index / step_count
                 ratio = elapsed_ratio ** acceleration
-                engine._mouse_ctl.position = (
+                engine.move_cursor((
                     int(round(start_x + ((end_x - start_x) * ratio))),
                     int(round(start_y + ((end_y - start_y) * ratio))),
-                )
+                ))
                 if duration_s > 0 and index < step_count:
                     target_elapsed = duration_s * elapsed_ratio
                     while time.perf_counter() - start_time < target_elapsed:
@@ -372,77 +369,7 @@ class DragStep(PointerTargetStep):
             return self._sleep_with_stop(engine, max(0, self.release_delay_ms) / 1000.0)
         finally:
             for btn in reversed(held_buttons):
-                engine._mouse_ctl.release(btn)
-
-    def _run_with_sendinput(self, engine: Any, start_x: int, start_y: int, end_x: float, end_y: float, held_buttons: list[mouse.Button], duration_s: float, step_count: int, acceleration: float) -> bool:
-        if "Windows" not in __import__("platform").system():
-            return False
-        if not hasattr(ctypes, "windll") or not hasattr(ctypes.windll, "user32"):
-            return False
-        user32 = ctypes.windll.user32
-        left_down, left_up = 0x0002, 0x0004
-        right_down, right_up = 0x0008, 0x0010
-        middle_down, middle_up = 0x0020, 0x0040
-        move_flag, absolute_flag = 0x0001, 0x8000
-        btn_map = {
-            mouse.Button.left: (left_down, left_up),
-            mouse.Button.right: (right_down, right_up),
-            mouse.Button.middle: (middle_down, middle_up),
-        }
-        screen_w = max(1, int(user32.GetSystemMetrics(0)) - 1)
-        screen_h = max(1, int(user32.GetSystemMetrics(1)) - 1)
-
-        class MOUSEINPUT(ctypes.Structure):
-            _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long), ("mouseData", ctypes.c_ulong), ("dwFlags", ctypes.c_ulong), ("time", ctypes.c_ulong), ("dwExtraInfo", ctypes.c_ulonglong)]
-        class INPUT_UNION(ctypes.Union):
-            _fields_ = [("mi", MOUSEINPUT)]
-        class INPUT(ctypes.Structure):
-            _fields_ = [("type", ctypes.c_ulong), ("union", INPUT_UNION)]
-
-        def send(flags: int, x: int | None = None, y: int | None = None) -> None:
-            if x is None or y is None:
-                dx = dy = 0
-            else:
-                dx = int(round((max(0, min(screen_w, x)) * 65535) / screen_w))
-                dy = int(round((max(0, min(screen_h, y)) * 65535) / screen_h))
-                flags |= absolute_flag
-            payload = INPUT(0, INPUT_UNION(MOUSEINPUT(dx, dy, 0, flags, 0, 0)))
-            user32.SendInput(1, ctypes.byref(payload), ctypes.sizeof(INPUT))
-
-        pressed: list[mouse.Button] = []
-        try:
-            send(move_flag, start_x, start_y)
-            for btn in held_buttons:
-                down_flags = btn_map.get(btn)
-                if down_flags is None:
-                    continue
-                send(down_flags[0])
-                pressed.append(btn)
-                if not self._sleep_with_stop(engine, max(0, self.hold_delay_ms) / 1000.0):
-                    return False
-            start_time = time.perf_counter()
-            for index in range(1, step_count + 1):
-                if engine._stop_evt.is_set():
-                    return False
-                elapsed_ratio = index / step_count
-                ratio = elapsed_ratio ** acceleration
-                send(move_flag, int(round(start_x + ((end_x - start_x) * ratio))), int(round(start_y + ((end_y - start_y) * ratio))))
-                if duration_s > 0 and index < step_count:
-                    target_elapsed = duration_s * elapsed_ratio
-                    while time.perf_counter() - start_time < target_elapsed:
-                        if engine._stop_evt.is_set():
-                            return False
-                        time.sleep(0.005)
-            if not self._sleep_with_stop(engine, max(0, self.release_delay_ms) / 1000.0):
-                return False
-            for btn in reversed(pressed):
-                up_flags = btn_map.get(btn)
-                if up_flags is not None:
-                    send(up_flags[1])
-            return True
-        except Exception:
-            return False
-
+                engine.mouse_up(btn)
 
 @dataclass
 class WaitStep(ActionStep):
@@ -552,71 +479,72 @@ class KeyTapStep(ActionStep):
                 break
         if not button_attr:
             return None
-        side_buttons_supported = bool(getattr(engine, "side_buttons_supported", hasattr(mouse.Button, "x1") and hasattr(mouse.Button, "x2")))
+        side_buttons_supported = bool(getattr(engine, "side_buttons_supported", True))
         if not side_buttons_supported:
             raise RuntimeError("Side mouse buttons are not supported on this runtime.")
-        button = getattr(mouse.Button, button_attr, None)
-        if button is None:
-            raise RuntimeError(f"Mouse button mapping '{button_attr}' is unavailable.")
-        return button
+        return button_attr
 
-    def _parse_combo(self) -> tuple[list[keyboard.Key], str | keyboard.Key]:
+    def _parse_combo(self) -> tuple[list[str], str]:
         return parse_keybind_text(self.key or "")
 
     def _key_name(self, value: Any) -> str:
         return str(value).replace("Key.", "").lower()
 
-    def _press_escape_key(self, operations: list[str]) -> None:
+    def _press_escape_key(self, engine: Any, operations: list[str]) -> None:
         operations.append("press escape")
-        pyautogui.press("esc")
+        engine.tap_key("esc")
 
-    def _run_with_mods(self, engine: Any, mods: list[keyboard.Key], action: Any, operations: list[str]) -> bool:
+    def _run_with_mods(self, engine: Any, mods: list[str], action: Any, operations: list[str]) -> bool:
         for mod in mods:
-            engine._kb_ctl.press(mod)
+            engine.key_down(mod)
             operations.append(f"press {self._key_name(mod)}")
         try:
             action()
             return True
         finally:
             for mod in reversed(mods):
-                engine._kb_ctl.release(mod)
+                engine.key_up(mod)
                 operations.append(f"release {self._key_name(mod)}")
 
-    def _tap_key(self, engine: Any, key: str | keyboard.Key, operations: list[str]) -> None:
-        if key == keyboard.Key.esc:
-            self._press_escape_key(operations)
+    def _tap_key(self, engine: Any, key: str, operations: list[str], has_modifiers: bool) -> None:
+        if key == "esc":
+            self._press_escape_key(engine, operations)
             return
-        tap = getattr(engine._kb_ctl, "tap", None)
-        if callable(tap):
-            operations.append(f"tap {self._key_name(key)}")
-            tap(key)
-            return
-        operations.append(f"press {self._key_name(key)}")
-        engine._kb_ctl.press(key)
-        operations.append(f"release {self._key_name(key)}")
-        engine._kb_ctl.release(key)
+        operations.append(f"tap {self._key_name(key)}")
+        engine.tap_key(key)
 
     def _run(self, engine: Any) -> bool:
         mods, base = self._parse_combo()
         mouse_button = self._mouse_button(engine)
-        operations: list[str] = []
-        details = {
+        details = self._execution_details or {
             "configured_combo": self.key or "",
             "parsed_modifiers": [self._key_name(mod) for mod in mods],
             "parsed_base": self._key_name(base),
             "dispatch_path": "keyboard_tap",
-            "operations": operations,
+            "operations": [],
         }
+        operations = details["operations"]
         self._execution_details = details
         if mouse_button is not None:
             details["dispatch_path"] = "mouse_side_button"
             details["parsed_base"] = str(mouse_button).replace("Button.", "").lower()
-            return self._run_with_mods(engine, mods, lambda: (operations.append(f"click {details['parsed_base']}"), engine._mouse_ctl.click(mouse_button)), operations)
+            return self._run_with_mods(engine, mods, lambda: (operations.append(f"click {details['parsed_base']}"), engine.click_mouse(mouse_button)), operations)
 
-        return self._run_with_mods(engine, mods, lambda: self._tap_key(engine, base, operations), operations)
+        return self._run_with_mods(engine, mods, lambda: self._tap_key(engine, base, operations, bool(mods)), operations)
 
     def _validate(self, engine: Any) -> None:
         self._mouse_button(engine)
+
+    def _prepare_execution_details(self, engine: Any) -> None:
+        mods, base = self._parse_combo()
+        mouse_button = self._mouse_button(engine)
+        self._execution_details = {
+            "configured_combo": self.key or "",
+            "parsed_modifiers": [self._key_name(mod) for mod in mods],
+            "parsed_base": str(mouse_button).replace("Button.", "").lower() if mouse_button is not None else self._key_name(base),
+            "dispatch_path": "mouse_side_button" if mouse_button is not None else "keyboard_tap",
+            "operations": [],
+        }
 
 
 @dataclass
@@ -632,41 +560,38 @@ class KeyHoldStep(ActionStep):
                 break
         if not button_attr:
             return None
-        side_buttons_supported = bool(getattr(engine, "side_buttons_supported", hasattr(mouse.Button, "x1") and hasattr(mouse.Button, "x2")))
+        side_buttons_supported = bool(getattr(engine, "side_buttons_supported", True))
         if not side_buttons_supported:
             raise RuntimeError("Side mouse buttons are not supported on this runtime.")
-        button = getattr(mouse.Button, button_attr, None)
-        if button is None:
-            raise RuntimeError(f"Mouse button mapping '{button_attr}' is unavailable.")
-        return button
+        return button_attr
 
-    def _parse_combo(self) -> tuple[list[keyboard.Key], str | keyboard.Key]:
+    def _parse_combo(self) -> tuple[list[str], str]:
         return parse_keybind_text(self.key or "")
 
     def _run(self, engine: Any) -> bool:
         mods, resolved = self._parse_combo()
         mouse_button = self._mouse_button(engine)
         delay_s = max(0, int(self.hold_ms)) / 1000.0
-        operations: list[str] = []
-        details = {
+        details = self._execution_details or {
             "configured_combo": self.key or "",
             "parsed_modifiers": [str(mod).replace("Key.", "").lower() for mod in mods],
             "parsed_base": str(resolved).replace("Key.", "").lower(),
             "dispatch_path": "keyboard_hold",
             "hold_ms": int(self.hold_ms),
-            "operations": operations,
+            "operations": [],
         }
+        operations = details["operations"]
         self._execution_details = details
 
         if mouse_button is not None:
             details["dispatch_path"] = "mouse_side_button"
             details["parsed_base"] = str(mouse_button).replace("Button.", "").lower()
             for mod in mods:
-                engine._kb_ctl.press(mod)
+                engine.key_down(mod)
                 operations.append(f"press {str(mod).replace('Key.', '').lower()}")
             try:
                 operations.append(f"press {details['parsed_base']}")
-                engine._mouse_ctl.press(mouse_button)
+                engine.mouse_down(mouse_button)
                 start = time.perf_counter()
                 while time.perf_counter() - start < delay_s:
                     if engine._stop_evt.is_set():
@@ -674,16 +599,16 @@ class KeyHoldStep(ActionStep):
                     time.sleep(0.005)
                 return True
             finally:
-                engine._mouse_ctl.release(mouse_button)
+                engine.mouse_up(mouse_button)
                 operations.append(f"release {details['parsed_base']}")
                 for mod in reversed(mods):
-                    engine._kb_ctl.release(mod)
+                    engine.key_up(mod)
                     operations.append(f"release {str(mod).replace('Key.', '').lower()}")
 
         for mod in mods:
-            engine._kb_ctl.press(mod)
+            engine.key_down(mod)
             operations.append(f"press {str(mod).replace('Key.', '').lower()}")
-        engine._kb_ctl.press(resolved)
+        engine.key_down(resolved)
         operations.append(f"press {str(resolved).replace('Key.', '').lower()}")
         if hasattr(engine, "_register_held_key"):
             engine._register_held_key(resolved)
@@ -701,11 +626,23 @@ class KeyHoldStep(ActionStep):
                 engine._unregister_held_key(resolved)
                 for mod in mods:
                     engine._unregister_held_key(mod)
-            engine._kb_ctl.release(resolved)
+            engine.key_up(resolved)
             operations.append(f"release {str(resolved).replace('Key.', '').lower()}")
             for mod in reversed(mods):
-                engine._kb_ctl.release(mod)
+                engine.key_up(mod)
                 operations.append(f"release {str(mod).replace('Key.', '').lower()}")
 
     def _validate(self, engine: Any) -> None:
         self._mouse_button(engine)
+
+    def _prepare_execution_details(self, engine: Any) -> None:
+        mods, resolved = self._parse_combo()
+        mouse_button = self._mouse_button(engine)
+        self._execution_details = {
+            "configured_combo": self.key or "",
+            "parsed_modifiers": [str(mod).replace("Key.", "").lower() for mod in mods],
+            "parsed_base": str(mouse_button if mouse_button is not None else resolved).replace("Button.", "").replace("Key.", "").lower(),
+            "dispatch_path": "mouse_side_button" if mouse_button is not None else "keyboard_hold",
+            "hold_ms": int(self.hold_ms),
+            "operations": [],
+        }

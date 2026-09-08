@@ -24,6 +24,9 @@ def main() -> None:
     api_parser = subparsers.add_parser("api", help="Run the local backend API.")
     api_parser.add_argument("--host", default="127.0.0.1")
     api_parser.add_argument("--port", type=int, default=8765)
+    api_parser.add_argument("--replace-pid", type=int, default=0)
+    api_parser.add_argument("--instance-id")
+    api_parser.add_argument("--lease-required", action="store_true")
     api_parser.set_defaults(target="api")
 
     check_parser = subparsers.add_parser("check", help="Run a quick environment check.")
@@ -48,7 +51,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.target == "api":
-        run_api(args.host, args.port)
+        run_api(args.host, args.port, args.replace_pid, args.instance_id, args.lease_required)
     elif args.target == "check":
         check_runtime()
     elif args.target == "doctor":

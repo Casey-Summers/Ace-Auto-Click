@@ -138,6 +138,6 @@ def test_profile_export_preserves_profile_contract() -> None:
         app_settings={"run_toggle_hotkey": "F8", "emergency_stop_hotkey": "F12"},
     )
 
-    assert export.schema_version == 1
+    assert export.schema_version == 2
     assert export.profile.steps[0].x == 10
     assert export.profile.loops == 3

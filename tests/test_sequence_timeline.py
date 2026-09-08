@@ -173,6 +173,33 @@ class RecordingEngine:
     def _on_status(self, message: str) -> None:
         self.status_messages.append(message)
 
+    @property
+    def cursor_position(self) -> tuple[int, int]:
+        return self._mouse_ctl.position
+
+    def move_cursor(self, value: tuple[int, int]) -> None:
+        self._mouse_ctl.position = value
+
+    def _button(self, value: object):
+        return getattr(pynput_mouse.Button, str(value).replace("Button.", ""), value)
+
+    def _key(self, value: object):
+        return getattr(keyboard.Key, str(value).replace("Key.", ""), value)
+
+    def click_mouse(self, button: object, count: int = 1) -> None:
+        for _ in range(count): self._mouse_ctl.click(self._button(button))
+
+    def mouse_down(self, button: object) -> None: self._mouse_ctl.press(self._button(button))
+    def mouse_up(self, button: object) -> None: self._mouse_ctl.release(self._button(button))
+    def key_down(self, key: object) -> None: self._kb_ctl.press(self._key(key))
+    def key_up(self, key: object) -> None: self._kb_ctl.release(self._key(key))
+    def tap_key(self, key: object) -> None:
+        key = self._key(key)
+        tap = getattr(self._kb_ctl, "tap", None)
+        if tap: tap(key)
+        else:
+            self._kb_ctl.press(key); self._kb_ctl.release(key)
+
 
 def test_action_execution_event_is_emitted_before_run_finishes() -> None:
     engine = RecordingEngine()
@@ -455,6 +482,27 @@ class RecordingKeyboard:
 
     def release(self, key: Any) -> None:
         self.releases.append(key)
+
+
+class RecordingInputDriver:
+    def __init__(self, pressed: list[str]) -> None:
+        self.pressed = pressed
+        self._cursor = actions.Point(0, 0) if hasattr(actions, "Point") else None
+
+    @property
+    def cursor_position(self):
+        from ace_auto_click.automation.input_driver import Point
+        return self._cursor or Point(0, 0)
+
+    def move(self, point): self._cursor = point
+    def mouse_down(self, button): return None
+    def mouse_up(self, button): return None
+    def click(self, button, count=1): return None
+    def key_down(self, key): self.pressed.append(str(key).replace("Key.", ""))
+    def key_up(self, key): return None
+    def tap(self, key): self.pressed.append(str(key).replace("Key.", ""))
+    def release_all(self): return None
+    def diagnostics(self): return {"driver": "recording", "checked": True}
 
 
 def test_move_step_moves_mouse_without_clicking() -> None:
@@ -753,20 +801,11 @@ def test_key_tap_step_supports_ctrl_modifier_combo() -> None:
 def test_key_tap_step_dispatches_captured_escape_as_special_key() -> None:
     engine = RecordingEngine()
     kb = RecordingKeyboard()
-    pressed: list[str] = []
     engine._kb_ctl = kb  # type: ignore[attr-defined]
     step = KeyTapStep(id="tap-esc", type="key_tap", key="esc", interval_ms=0)
-    original_press = actions.pyautogui.press
-    actions.pyautogui.press = pressed.append  # type: ignore[method-assign]
-
-    try:
-        assert step.execute(engine) is True
-    finally:
-        actions.pyautogui.press = original_press  # type: ignore[method-assign]
-
-    assert pressed == ["esc"]
-    assert kb.presses == []
-    assert kb.releases == []
+    assert step.execute(engine) is True
+    assert kb.presses == [keyboard.Key.esc]
+    assert kb.releases == [keyboard.Key.esc]
     assert engine.events == [("tap-esc", "step_execute"), ("tap-esc", "step_complete")]
 
 
@@ -789,14 +828,13 @@ def test_sequence_continues_after_wait_until_mismatch_then_escape_keybind(monkey
     key = KeyTapStep(id="tap-esc", type="key_tap", key="esc", interval_ms=0)
     click = ClickStep(id="click-1", type="click", x=30, y=40, interval_ms=0)
     monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (0, 0, 0))
-    monkeypatch.setattr(actions.pyautogui, "press", lambda key_name: kb.presses.append(key_name))
 
     assert pixel.execute(engine) is True
     assert key.execute(engine) is True
     assert click.execute(engine) is True
 
-    assert kb.presses == ["esc"]
-    assert kb.releases == []
+    assert kb.presses == [keyboard.Key.esc]
+    assert kb.releases == [keyboard.Key.esc]
     assert mouse.position == (30, 40)
     assert len(mouse.clicks) == 1
 
@@ -941,10 +979,9 @@ def _wait_engine_stopped(engine: ClickEngine, timeout_s: float = 5.0) -> None:
 
 def test_exit_loop_when_match_skips_blocking_middle_condition_and_continues(monkeypatch) -> None:
     status_messages: list[str] = []
-    engine = ClickEngine(on_status=status_messages.append)
-    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (65, 65, 71))
     pressed: list[str] = []
-    monkeypatch.setattr(actions.pyautogui, "press", lambda key_name: pressed.append(key_name))
+    engine = ClickEngine(on_status=status_messages.append, input_driver=RecordingInputDriver(pressed))
+    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (65, 65, 71))
 
     steps = [
         LoopStartStepModel(id="loop-start", loop_id="loop-a", loop_count=3),
@@ -968,10 +1005,9 @@ def test_exit_loop_when_match_skips_blocking_middle_condition_and_continues(monk
 
 
 def test_exit_loop_when_match_exits_innermost_loop_only(monkeypatch) -> None:
-    engine = ClickEngine(on_status=lambda _: None)
-    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (65, 65, 71))
     pressed: list[str] = []
-    monkeypatch.setattr(actions.pyautogui, "press", lambda key_name: pressed.append(key_name))
+    engine = ClickEngine(on_status=lambda _: None, input_driver=RecordingInputDriver(pressed))
+    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (65, 65, 71))
 
     steps = [
         LoopStartStepModel(id="outer-start", loop_id="outer", loop_count=1),
@@ -998,10 +1034,9 @@ def test_exit_loop_when_match_exits_innermost_loop_only(monkeypatch) -> None:
 
 
 def test_exit_loop_when_match_root_level_is_noop_and_continues(monkeypatch) -> None:
-    engine = ClickEngine(on_status=lambda _: None)
-    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (65, 65, 71))
     pressed: list[str] = []
-    monkeypatch.setattr(actions.pyautogui, "press", lambda key_name: pressed.append(key_name))
+    engine = ClickEngine(on_status=lambda _: None, input_driver=RecordingInputDriver(pressed))
+    monkeypatch.setattr(actions, "get_pixel_rgb", lambda x, y: (65, 65, 71))
 
     steps = [
         PixelCheckStepModel(id="px-root-exit", mode="exit_loop_when_match", x=884, y=857, expected_rgb=(65, 65, 71), tolerance=0),

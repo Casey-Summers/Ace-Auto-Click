@@ -99,6 +99,9 @@ def load_profile_export(file_name: str) -> ProfileExport:
     path = ensure_profiles_dir() / file_name
     with path.open("r", encoding="utf-8") as handle:
         raw = json.load(handle)
+    if raw.get("schema_version") == 1:
+        raw["schema_version"] = 2
+        raw.setdefault("profile", {})["target"] = None
     return ProfileExport.model_validate(raw)
 
 

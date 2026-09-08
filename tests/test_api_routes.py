@@ -20,6 +20,24 @@ def test_state_route_exposes_runtime_contract() -> None:
     assert "last_error" in response.json()
 
 
+def test_runtime_info_exposes_identity_and_input_service() -> None:
+    response = client.get("/runtime/info")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["instance_id"]
+    assert payload["pid"] > 0
+    assert payload["dpi_awareness"]
+    assert payload["input_driver"]["driver"] == "win32-sendinput"
+    assert "target" in payload
+
+
+def test_runtime_lease_is_available() -> None:
+    response = client.post("/runtime/lease")
+    assert response.status_code == 200
+    assert response.json()["instance_id"]
+
+
 def test_sequence_route_rejects_empty_sequence() -> None:
     response = client.post("/run/sequence", json={"steps": [], "loops": 0})
 

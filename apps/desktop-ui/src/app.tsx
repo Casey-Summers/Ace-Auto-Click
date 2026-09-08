@@ -1,4 +1,4 @@
-import { AlertTriangle, Settings, Zap } from "lucide-react";
+import { AlertTriangle, Settings, ShieldCheck, Zap } from "lucide-react";
 
 import { ModeToggle } from "./components/ModeToggle";
 import { SplitHotkeyActionButton } from "./components/SplitHotkeyActionButton";
@@ -44,6 +44,11 @@ export function App() {
     requestSaveProfile,
     runToggle,
     executionEvents,
+    runtimeInfo,
+    inputServiceBusy,
+    requestElevation,
+    bindTarget,
+    restoreTarget,
     samplePixel,
     samplingPixelStepId,
     saveDialogOpen,
@@ -63,6 +68,8 @@ export function App() {
     state,
     setMode
   } = controller;
+  const elevatedInput = Boolean(runtimeInfo?.elevated);
+  const dispatchBlocked = Boolean(runtimeInfo?.input_driver.last_dispatch && runtimeInfo.input_driver.last_dispatch.inserted < runtimeInfo.input_driver.last_dispatch.submitted);
 
   const header = (
     <header className="mb-4 flex items-center justify-between">
@@ -101,7 +108,22 @@ export function App() {
   );
 
   const centerTop = (
-    <ProfileManager
+    <><div className="mb-2 flex items-center justify-between rounded-xl border border-border bg-surface/55 px-3 py-2 text-xs">
+      <div className="flex items-center gap-2">
+        <ShieldCheck size={15} className={elevatedInput ? "text-success" : "text-warning"} />
+        <span>
+          Input: {elevatedInput ? "administrator backend" : "standard backend"}
+          {runtimeInfo ? ` · DPI ${runtimeInfo.dpi_awareness} · PID ${runtimeInfo.pid}` : " · checking runtime"}
+          {runtimeInfo?.target?.configured ? ` · Target: ${runtimeInfo.target.window_title || "unavailable"}` : " · No target bound"}
+          {runtimeInfo?.target?.warning ? ` · ${runtimeInfo.target.warning}` : ""}
+        </span>
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" variant="ghost" disabled={state.running} onClick={bindTarget}>{runtimeInfo?.target?.configured ? "Rebind target" : "Bind target"}</Button>
+        {runtimeInfo?.target?.configured ? <Button size="sm" variant="ghost" disabled={state.running} onClick={restoreTarget}>Restore fullscreen</Button> : null}
+        {!elevatedInput && (runtimeInfo?.target?.elevated || dispatchBlocked) ? <Button size="sm" disabled={inputServiceBusy || state.running} onClick={requestElevation}>{inputServiceBusy ? "Restarting…" : "Restart as administrator"}</Button> : null}
+      </div>
+    </div><ProfileManager
       activeProfile={activeProfile}
       saving={profileSaving}
       error={profileError}
@@ -113,7 +135,7 @@ export function App() {
         setLoadDialogOpen(true);
       }}
       onOpenProfilesFolder={openProfilesFolder}
-    />
+    /></>
   );
 
   const center = settings.mode === "advanced" ? (

@@ -84,6 +84,11 @@ tab as the user-facing app surface.
 
 - `F12` is reserved as the emergency stop hotkey in the API contract.
 - PyAutoGUI's screen-corner failsafe remains enabled.
+- If Windows blocks input to an elevated target, use **Restart input as
+  administrator** in the runtime bar. Only the authenticated input service is
+  elevated; the UI remains at normal privilege.
+- A desktop launch refuses to reuse an older or unrelated backend on port
+  `8765`. Close the prior process before starting another desktop instance.
 - This tool is intended for personal productivity, accessibility, and testing
   your own apps.
 
